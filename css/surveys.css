@@ -1,0 +1,31 @@
+#branding { height:64px; border-bottom:1px solid gray; }
+#branding .title { float:left; }
+#branding .logo { float: right; }
+ol.qaset li { margin-top:1em; }
+div#auth { margin:auto; text-align:center; border:2px solid red; margin-top:2em; width:20em; }
+ul#signon { margin:0; padding:0; margin-top:1em; list-style:none; }
+ul#signon li { list-style:none; margin:0; padding:0; margin-top:1em }
+.warning {font-weight:bold;color:red;display:block;margin-top:1em;}
+div.submit {margin:1em 0 1em 0;}
+div.answers { margin-top:0.5em; }
+span.question { font-weight:bold; }
+span.you { font-weight:bold; color:red; }
+span.pcnt { font-weight:bold; }
+span.total { font-weight:bold; color:blue; }
+span.bad { font-weight:bold; color:red; background:#ffe; }
+span.pass { font-weight:bold; color:red; }
+li.active {  }
+li.inactive, li.inactive a { color:#ccc; }
+a.button { background:#ccc; border-top:2px solid #ddd; border-bottom:2px solid #aaa; border-left:2px solid #ddd; border-right:2px solid #aaa; padding:2px; font-size:x-small; }
+a.button:hover { background:#ddd; }
+a.button:active { background:#ddd; border-top:2px solid #aaa; border-bottom:2px solid #ddd; border-left:2px solid #aaa; border-right:2px solid #ddd; }
+.small { font-size:small; }
+pre.sample { margin:1em; padding:1em; background:#eee;}
+div#doc { margin:1em; padding:1em; font-size:1em; }
+#doc dt { font-weight: bold; }
+.meta { color:red; }
+#breadcrumbs { height:1.2em; font-size:0.8em; margin-top:0.2em; }
+#breadcrumbs ul { display:inline; list-style:none; margin:0; }
+#breadcrumbs ul li { display:inline; list-style:none; float:left; margin:0; margin-right:0.5em;}
+li.splitter { margin:0; }
+span.status { color: black; }
