@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<survey id="trade-200801"
+        description="Trade Finance Assessment"
+        validFrom="20080324"
+        validTill="20080430"
+        surveyType="Assessment"
+        protected="no"
+        accessKey="trade0801"
+        verboseResults="yes"
+        passRate="16"
+        logUsers="yes"
+        active="yes">
+
+  <question key="1" type="radio" text="Which is not a type of Trade Finance?" answerKey="c">
+    <answer key="a">Trade Loans</answer>
+    <answer key="b">Receivables Purchase</answer>
+    <answer key="c">Collections</answer>
+    <answer key="d">Supplier Finance</answer>
+  </question>
+  
+  <question key="2" type="radio" text="Which is not an example of Distribution Finance?" answerKey="c">
+    <answer key="a">Purchase of a Trade Receivable with recourse to the seller</answer>
+    <answer key="b">Purchase of a Trade Receivable without recourse to the seller</answer>
+    <answer key="c">Import Finance loan</answer>
+    <answer key="d">Credit Insured Accounts Receivable</answer>
+  </question>
+  
+  <question key="3" type="radio" text="Which is not a typical scenario for using Trade Finance?" answerKey="a">
+    <answer key="a">Company wants to obtain payment from an importer in exchange for presentation of trade documents</answer>
+    <answer key="b">Seller (exporter) needs funds to buy materials</answer>
+    <answer key="c">Buyer (importer) wants to delay payment</answer>
+    <answer key="d">Buyer wants to improve relationship with seller who needs funding</answer>
+  </question>
+  
+  <question key="4" type="radio" text="How does Trade Finance meet our clients' needs?" answerKey="d">
+    <answer key="a">Structures financing against trade flows</answer>
+    <answer key="b">Provides risk mitigation</answer>
+    <answer key="c">Provides Working Capital Tools</answer>
+    <answer key="d">All of the above</answer>
+    <answer key="e">a and b only</answer>
+  </question>
+  
+  <question key="5" type="radio" text="Why is Trade Finance a key area for Citi?" answerKey="a">
+    <answer key="a">Trade financing is typically less risky than direct, clean lending</answer>
+    <answer key="b">There are restrictions for lending in many of these countries and this is the only way to provide financing</answer>
+    <answer key="c">We do not have sufficient room on our balance sheet for direct lending</answer>
+    <answer key="d">GATT agreement dictates that Trade Finance vehicles must be used</answer>
+  </question>
+  
+  <question key="6" type="radio" text="Which is not true about a typical structure of a Trade Finance transaction?" answerKey="d">
+    <answer key="a">Short-term financing (up to 1 year)</answer>
+    <answer key="b">Revolving credit</answer>
+    <answer key="c">Usually customized</answer>
+    <answer key="d">Operationally more difficult than basic payment processes</answer>
+  </question>
+  
+  <question key="7" type="radio" text="What is the essence of receivables finance?" answerKey="a">
+    <answer key="a">Citi or another party is purchasing the seller's asset, thereby the seller receives cash</answer>
+    <answer key="b">Accounts payable are converted into a tradable instrument and sold in the market</answer>
+    <answer key="c">Buyer purchases the receivable from the seller and therefore finances the transaction</answer>
+    <answer key="d">Citi lends funds to the buyer and/or seller to reduce the need to put assets on the balance sheet</answer>
+  </question>
+  
+  <question key="8" type="radio" text="Under what condition(s) would we offer Distribution Finance?"  answerKey="e">
+    <answer key="a">Seller is risk rated 4- or better</answer>
+    <answer key="b">There is a diverse portfolio of buyers</answer>
+    <answer key="c">Buyers are all risk rated 4- or better</answer>
+    <answer key="d">All of the above</answer>
+    <answer key="e">a and b only</answer>
+  </question>
+  
+  <question key="9" type="radio" text="Which is not a benefit of Distribution Finance?" answerKey="c">
+    <answer key="a">It is a tool for sellers to expand sales and gain market share in fast growing markets</answer>
+    <answer key="b">It provides funding for regional distributors who often have limited financing options</answer>
+    <answer key="c">It simplifies the purchasing process for both seller and buyer</answer>
+    <answer key="d">It shortens the payment period of buyer so supplier gets paid sooner</answer>
+  </question>
+  
+  <question key="10" type="radio" text="Which kind of situation is most likely a scenario for Distribution Finance?" answerKey="c">
+    <answer key="a">Company like General Electric with a lot of buying power and who has many different suppliers in Asia Pacific region</answer>
+    <answer key="b">Company like General Motors with lower credit rating who needs access to funding and has many concentrated suppliers</answer>
+    <answer key="c">Company like Cisco who manufactures telecommunications equipment and sells to many distributors</answer>
+    <answer key="d">Company like Ernst and Young the accounting/consulting firm that has limited inventory and therefore fewer funding options</answer>
+  </question>
+  
+  <question key="11" type="radio" text="Which kind of situation is most likely a scenario for Supplier Finance?" answerKey="a">
+    <answer key="a">Company like General Electric with a lot of buying power and who has many different suppliers in Asia Pacific region</answer>
+    <answer key="b">Company like General Motors with lower credit rating who needs access to funding and has many concentrated suppliers</answer>
+    <answer key="c">Company like Cisco who manufactures telecommunications equipment and sells to many distributors</answer>
+    <answer key="d">Company like Ernst and Young the accounting/consulting firm that has limited inventory and therefore fewer funding options</answer>
+  </question>
+  
+  <question key="12" type="radio" text="Whose credit rating is the most important for Supplier Finance?" answerKey="a">
+    <answer key="a">Buyer's credit rating</answer>
+    <answer key="b">Supplier's credit rating</answer>
+    <answer key="c">Issuing bank's credit rating</answer>
+    <answer key="d">Credit rating is not important in this type of transaction because of the structure</answer>
+  </question>
+  
+  <question key="13" type="radio" text="Which of the following is an economic asset?" answerHint="Cash is the only economic asset in the supply chain because it is the only asset that a company can use in its own operations to buy back stock and further the growth of the company" answerKey="c">
+    <answer key="a">Inventory</answer>
+    <answer key="b">Accounts Payable</answer>
+    <answer key="c">Cash</answer>
+    <answer key="d">Accounts Receivable</answer>
+  </question>
+  
+  <question key="14" type="radio" text="Which of the following would result in the best working capital scenario?" answerHint="A company wants to minimize Days Sales and Days Inventory while maximizing Days Payables Outstanding for the optimal working capital" answerKey="a">
+    <answer key="a">Low DSO, High DPO</answer>
+    <answer key="b">Low DSO, Low DPO</answer>
+    <answer key="c">High DSO, Low DPO</answer>
+    <answer key="d">High DSO, High DPO</answer>
+  </question>
+  
+  
+  <question key="15" type="radio" text="Why do companies wish to extend Accounts Payable?" answerHint="Accounts Payable is a non-interest bearing liability, which is beneficial to a company as it is essentially a free form of financing." answerKey="d">
+    <answer key="a">It is a low interest bearing liability</answer>
+    <answer key="b">It increases the quality of the goods procured</answer>
+    <answer key="c">It generally results in discounted pricing for the Buyer</answer>
+    <answer key="d">It is a non-interest liability</answer>
+  </question>
+  
+  <question key="16" type="radio" text="A negative net cash cycle negatively impacts a company." answerHint="A negative net cash cycle is in fact a tremendous benefit to a company.  It effectively means the company is holding onto its customers’ or its suppliers’ cash for 54 days for each sale it makes, making it a means of free financing." answerKey="B">
+    <answer key="A">True</answer>
+    <answer key="B">False</answer>
+  </question>
+  
+  <question key="17" type="radio" text="When used to finance the day-to-day operations of a company, interest bearing liabilities restrict the company’s ability to raise capital to finance growth" answerHint="When a company uses its own debt or equity to finance is day-to-day operations, it uses most of the capacity from its capital structure to finance its growth and longer term investment strategies." answerKey="A">
+    <answer key="A">True</answer>
+    <answer key="B">False</answer>
+  </question>
+  
+  <question key="18" type="radio" text="In a receivables purchase, Citi can take advantage of cost of capital arbitrage opportunities." answerHint="Citi can arbitrage the cost of capital in scenarios in which it charges smaller, worse rated Suppliers lower rates, since payment risk is taken on larger, better rated Buyers." answerKey="A">
+    <answer key="A">True</answer>
+    <answer key="B">False</answer>
+  </question>
+  
+  <question key="19" type="radio" text="Accounts Payable must be balanced with supplier relationship and Cost of Goods Sold (COGS)" answerHint="Although Accounts Payable are a free form of financing, companies must balance this liability with supplier relationship and cost" answerKey="A">
+    <answer key="A">True</answer>
+    <answer key="B">False</answer>
+  </question>
+
+  <question key="20" type="radio" text="Calculate the financial cost of the Supplier's supply chain: 15% economic cost of capital; $500MM in inventory. Supplier holds: Inventory for 45 Days; Accounts receivable for 60 days; 2 day cash reconciliation" answerHint="The total carrying costs amount to 107 days. Multiply the dollar amount of inventory ($500MM) by the economic cost of capital over 360 (15%/360) times 107 days, which equals $22.3MM in total carrying costs." answerKey="d">
+    <answer key="a">$9.4MM</answer>
+    <answer key="b">$12.5MM</answer>
+    <answer key="c">$21.9MM</answer>
+    <answer key="d">$22.3MM</answer>
+  </question>
+
+</survey>
