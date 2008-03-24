@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<survey id="survey"
+        description="Just a survey"
+        surveyType="Poll"
+        verboseResults="yes"
+        active="yes">
+
+  <surveyInstructions>
+    Bla.
+  </surveyInstructions>
+
+  <question key="1" type="radio" text="Which is not a type of Trade Finance?" answerKey="c">
+    <answer key="a">Trade Loans</answer>
+    <answer key="b">Receivables Purchase</answer>
+    <answer key="c">Collections</answer>
+    <answer key="d">Supplier Finance</answer>
+  </question>
+
+</survey>
