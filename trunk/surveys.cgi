@@ -1,5 +1,6 @@
 #!/usr/bin/perl
 
+
 package survey;
 
 use strict qw/vars/;
@@ -11,20 +12,22 @@ use XML::Simple;
 use HTTP::Date qw/time2iso time2str/;
 use FileHandle;
 use Data::Dumper; # for debugging purposes, mostly
-use vars qw/$q $path $method $debug_level $survey_type/;
+use vars qw/$q $path $survey_type/;
 
 use constant VERSION => '0.1';
 use constant CONFIG_DIR => 'cgi-data/surveys';
-use constant SCRIPT_URL => 'http://localhost:8888/cgi-bin/surveys.cgi';
+#use constant SCRIPT_URL => 'http://localhost:8888/cgi-bin/surveys.cgi';
 #use constant SCRIPT_URL => 'http://vkocmedb601.eur.nsroot.net/cgi-bin/surveys.cgi';
+use constant SCRIPT_URL => '/cgi-bin/surveys.cgi';
 use constant COOKIE_NAME => 'net.nsroot.vkocmedb601.cgi.surveys.soe';
 
+# A little help for debugginh...
+$ENV{REQUEST_METHOD} = 'GET' unless defined $ENV{REQUEST_METHOD};
 
 $q = new CGI;
 $path = $q->path_info();
-$method = $q->request_method();
-$debug_level = 1;
 $survey_type = 'Surveys';
+#$| = 1; # Tell Perl not to buffer our output
 
 # HTTP method processing routines
 #
@@ -98,6 +101,7 @@ sub absolute_url($) {
 }
 
 
+
 #
 # Request dispatchers
 #
@@ -122,7 +126,7 @@ eval {
   # show survey
   GET qr{^/survey/([-_[:alnum:]]+)/?$} => sub {
     my $sid = $1;
-    my $survey = read_survey(glob get_local_path($sid));
+    my $survey = read_survey(get_local_path($sid));
 
     authenticate_user($sid) if ( $survey->{protected} eq 'yes'
                                  and !survey_cookie_set_p() );
@@ -141,7 +145,7 @@ eval {
   POST qr{^/survey/answer/([-_[:alnum:]]+)$} => sub {
     my $sid = $1;
     my $data = $q->Vars;
-    my $survey = read_survey(glob get_local_path($data->{s}));
+    my $survey = read_survey(get_local_path($data->{s}));
     my $sso = $q->cookie(COOKIE_NAME);
     my $qq = scalar keys %{$survey->{question}};
     my $pr = $survey->{passRate} || 0;
@@ -221,12 +225,13 @@ eval {
 
   };
 
+
   # Autheticate and redirect to the survey if all is fine or to no_entry page if
   # not.
   POST qr{^/survey/auth/([-_[:alnum:]]+)$} => sub {
     my $sid = $1;
     my $data = $q->Vars;
-    my $survey = read_survey(glob get_local_path($sid));
+    my $survey = read_survey(get_local_path($sid));
 
     no_entry() if ($data->{skey} ne $survey->{accessKey});
     set_auth_cookie($data->{'sso'});
@@ -253,6 +258,21 @@ sub survey_edit_form ($) {
       end_html;
 }
 
+
+# Function: glob_dir()
+#
+# Reads CONFIG_DIR and returns the list of XML files in it.
+#
+# Why are we not using Perl's glob?  Because there was no ending to "mysterious"
+# data losses with it -- shift not returning anything, etc.  And in any case --
+# glob does a call to shell, whereas opendir does not.
+sub glob_dir () {
+  opendir(DIR, CONFIG_DIR);
+  my @files = grep { /\.xml$/ } readdir(DIR);
+  closedir(DIR);
+  return @files;
+}
+
 # Function: list_all_surveys(STATUS)
 #
 # Lists all surveys that match STATUS (by default lists all defined surveys).
@@ -260,11 +280,12 @@ sub list_all_surveys(;$) {
   my $status = shift || 'ALL'; # by default we show all surveys
   my @surveys;
   my @page;
-  for my $fn (glob get_local_path('*')) {
-    my ($id) = $fn =~ m{/([^/]+)\.xml$};
-    next unless defined $id;
-    push @surveys, survey_title_link($id);
+
+  for my $fn ( glob_dir() ) {
+    next unless $fn =~ m{([^/]+)\.xml$};
+    push @surveys, survey_title_link($1);
   }
+
   my $num_surveys = scalar @surveys || 0;
   push @page, $q->h2('Available surveys'),
     p('There ', ($num_surveys == 1 ? 'is' : 'are'),
@@ -291,10 +312,11 @@ sub list_all_surveys(;$) {
 # Returns:
 #   Hash reference containing the representation of XML file.
 sub read_survey ($) {
-  my $def = shift;
+  my $survey_file = shift;
+  confess "No name has been supplied for survey file!" unless defined $survey_file;
+  confess "The file `$survey_file' does not exist!" if !(-e $survey_file);
   my $xs = new XML::Simple (ForceArray => 1, KeepRoot => 0, KeyAttr => ['key']);
-  my $sRef = $xs->XMLin($def);
-  return $sRef;
+  return $xs->XMLin($survey_file);
 }
 
 
@@ -341,7 +363,7 @@ sub standard_headers ($;$$$) {
                                  $js
                                ] );
   push @output, $q->div( { id=>'branding' }, '' );
-  push @output, $q->div( { id=>'breadcrumbs' }, breadcrubms($title, $sid) );
+  push @output, $q->div( { id=>'navigation' }, breadcrubms($title, $sid) );
   print @output;
   return;
 }
@@ -353,12 +375,14 @@ sub standard_headers ($;$$$) {
 sub breadcrubms($$) {
   my ($title, $sid) = @_;
   my @bcrumbs;
+  push @bcrumbs, $q->li( a( { href=>'/' }, 'Citi M&amp;B Home' ) );
+  push @bcrumbs, $q->li( { class=>'leftTab' }, '' );
   push @bcrumbs, $q->li( a( { href=>absolute_url('/') }, 'Surveys Home' ) );
   if (defined $sid) {
-    push @bcrumbs, $q->li( { class=>'splitter' }, ':' );
+    push @bcrumbs, $q->li( { class=>'leftTab' }, '' );
     push @bcrumbs, $q->li( a( { href=>absolute_url("/surveys/$sid") }, $title) );
   }
-  return $q->ul(@bcrumbs);
+  return $q->ul( {id=>'nav'}, @bcrumbs);
 }
 
 # Function: build_form(SURVEY_ID, SURVEYOBJ)
@@ -373,13 +397,15 @@ sub breadcrubms($$) {
 #   Outputs HTML form
 sub build_form ($$) {
   my ($sid,$survey) = @_;
-  print $q->h2({-class=>'surveyDescription'},$survey->{'description'});
-  print $q->p($survey->{'surveyInstructions'});
-  print $q->start_div({ -class => 'survey' });
-  print $q->start_form(-id=>"$sid", -method=>'post',
+  my @pg;
+  push @pg, $q->h2( {-class=>'surveyDescription'}, $survey->{'description'} );
+  push @pg, $q->p( $survey->{'surveyInstructions'} );
+  push @pg, $q->start_div( { -class => 'survey' } );
+  push @pg, $q->start_form(-id=>"$sid", -method=>'post',
                        -action => absolute_url('')."/survey/answer/$sid");
-  print $q->hidden(-name => 'mode', -value => 'r'),
+  push @pg, $q->hidden(-name => 'mode', -value => 'r'),
     $q->hidden(-name => 's', -value => $sid);
+
   my @qaset;
   map {
     my (%l, @v, $answers);
@@ -416,11 +442,12 @@ sub build_form ($$) {
 
   } sort {$a <=> $b} keys %{$survey->{'question'}};
 
-  print $q->ol({-class=>'qaset'}, @qaset);
-  print $q->div({-id=>'pollSubmit',-class=>'submit'},
-                submit('submit','Submit'));
+  push @pg, $q->ol({-class=>'qaset'}, @qaset);
+  push @pg, $q->div({-id=>'pollSubmit',-class=>'submit'},
+                    submit('submit','Submit'));
+  print @pg;
   print $q->endform(),enddiv();
-  #return;
+  return;
 }
 
 
@@ -494,11 +521,9 @@ sub debug_print (@) {
 # survey page for a given survey ID.
 sub survey_title_link ($) {
   my $sid = shift;
-  debug_print($sid);
-  my $s = read_survey(glob get_local_path($sid));
+  my $s = read_survey(get_local_path($sid));
   my $css = 'active';
   my @sli;
-  #debug_print ($s->{description});
   $css = 'inactive' if $s->{'active'} =~ m/^n/i;
   push @sli, $q->li( { class => $css },
                      a( { href => absolute_url('/survey/'.$sid) },
@@ -506,7 +531,6 @@ sub survey_title_link ($) {
                      a( { class => 'button', href => absolute_url('/survey/edit/'.$sid) }, 'Edit'), ' ',
                      span({class=>'small'},"[ $sid ]"));
   push @sli, ($css eq 'active' ? '' : span({class=>'status'},' — Inactive') );
-  debug_print ( @sli );
   return join "\n", @sli;
   #return $x;
 }
@@ -550,7 +574,6 @@ sub set_survey_taken_cookie ($) {
 # Saves SCORE into survey log
 sub save_score ($$) {
   my ($sid,$score) = @_;
-  #debug_print ($sid,$score);
   my $fh = new FileHandle CONFIG_DIR.'/'.$sid.'.dat', O_WRONLY|O_APPEND|O_CREAT;
   if (defined $fh) {
     print $fh $score."\n";
