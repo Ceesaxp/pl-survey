@@ -27,5 +27,5 @@ div#doc { margin:1em; padding:1em; font-size:1em; }
 #breadcrumbs { height:1.2em; font-size:0.8em; margin-top:0.2em; }
 #breadcrumbs ul { display:inline; list-style:none; margin:0; }
 #breadcrumbs ul li { display:inline; list-style:none; float:left; margin:0; margin-right:0.5em;}
-li.splitter { margin:0; }
+li.splitter { margin:0; font-weight:bold; }
 span.status { color: black; }
