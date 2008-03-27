@@ -136,6 +136,18 @@ eval {
     form_extras($sid);
   };
 
+
+  # survey rporting
+  GET qr{^/survey/report/([-_[:alnum:]]+)/?$} => sub {
+    my $sid = $1;
+    my $survey = read_survey(get_local_path($sid));
+
+    authenticate_admin_user ($sid) unless survey_admin_cookie_set_p();
+    standard_headers ( $survey->{'description'} );
+    build_survey_report ($sid);
+  };
+
+  # editing survey content !!FIXME!!
   GET qr{^/survey/edit/([-_[:alnum:]]+)$} => sub {
     my $sid = $1;
     standard_headers('Edit Survey Parameters') && survey_edit_form($sid);
@@ -380,7 +392,7 @@ sub breadcrubms($$) {
   push @bcrumbs, $q->li( a( { href=>absolute_url('/') }, 'Surveys Home' ) );
   if (defined $sid) {
     push @bcrumbs, $q->li( { class=>'leftTab' }, '' );
-    push @bcrumbs, $q->li( a( { href=>absolute_url("/surveys/$sid") }, $title) );
+    push @bcrumbs, $q->li( a( { href=>absolute_url("/survey/$sid") }, $title) );
   }
   return $q->ul( {id=>'nav'}, @bcrumbs);
 }
@@ -478,6 +490,15 @@ sub authenticate_user ($) {
 }
 
 
+# Function authenticate_admin_user (SID)
+#
+# Same as authenticate_user but for admin purposes
+sub authenticate_admin_user ($) {
+  return 1;
+}
+
+
+
 # Function: no_entry
 #
 # If a user provides wrong survey access key -- tell him just that, blank out
@@ -535,12 +556,93 @@ sub survey_title_link ($) {
   #return $x;
 }
 
+# Function: build_survey_report (SID)
+#
+# Reporting for a survey SID
+sub build_survey_report ($) {
+  my $sid = shift;
+  my @rep;
+  my $resp = read_survey_responses ($sid);
+  my $survey = read_survey(get_local_path($sid));
+  print $q->h1('Summary results for',$survey->{'description'});
+  my $pass_rate = $survey->{'passRate'};
+  #print $q->pre(Dumper($resp));
+  #print $q->p($resp->{'2008-03-06'}->{'ap72658'}->{'2008-03-06 18:12:48'}->{'bad'});
+  push @rep, $q->li('Total number of times taken:',
+                    strong( $resp->{'times_total'} ),
+                    ', details by day:',
+                    $q->ul( map {
+                      $q->li($_, ':', $resp->{$_}->{'times_day'}) if m/^\d{4}-\d{2}-\d{2}/;
+                    } sort keys %{$resp} ));
+  my ($pass, $fail);
+  $pass = $fail = 0;
+
+  debug_print(Dumper($resp));
+
+  map {
+    my $d = $_;
+    map {
+      my $u = $_;
+      map {
+        $pass++ if $_->[2] >= $pass_rate;
+        $fail++ if $_->[2] < $pass_rate;
+      } @{$resp->{$d}->{$u}};
+    } sort keys %{$resp->{$d}} if ($d =~ m/^\d{4}-\d{2}-\d{2}/);
+  } sort keys %{$resp};
+
+  push @rep, $q->li('Passed: ', $pass);
+  push @rep, $q->li('Failed: ', $fail);
+  print $q->ul(@rep);
+  return;
+}
+
+
+# Function read_survey_responses (SID)
+#
+# Read responses database in and arrange data in a hash for easy retreival in
+# the reporting engine.
+sub read_survey_responses ($) {
+  my $sid = shift;
+  my $db = {};  # define anonymous hash to hold database in
+  open (DB, CONFIG_DIR.'/'.$sid.'.dat') or
+    confess "Cannot open file ${sid}.dat: $!";
+
+  while (<DB>) {
+    chomp;
+    s/\r$//; # strip CRLFs
+    my @r = split /\|/;
+    my @answers;
+    map {
+      m/q\d+:(.+)/;
+      push @answers, $1;
+    } @r[4..23];
+
+    my ($d, $t) = split / /,$r[0];
+    my $user = $r[1];
+
+    my @rec = ( $r[0], \@answers, $r[24], $r[25] );
+    push @{$db->{$d}->{$user}}, \@rec;
+    $db->{$d}->{'times_day_user'}->{$user}++;
+    $db->{$d}->{'times_day'}++;
+    $db->{$user}->{'times_user'}++;
+    $db->{'times_total'}++;
+  }
+
+  close (DB);
+  return $db;
+}
 
 # Function: survey_cookie_set_p
 #
 # Returns boolean if a survey cookie has been set
 sub survey_cookie_set_p {
   return defined $q->cookie(COOKIE_NAME);
+}
+
+# Same as above, but for admin interface
+sub survey_admin_cookie_set_p {
+  #return defined $q->cookie(ADMIN_COOKIE_NAME);
+  return 1;
 }
 
 
