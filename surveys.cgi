@@ -9,15 +9,14 @@ use CGI qw/:standard/;
 use CGI::Cookie;
 use CGI::Carp qw/fatalsToBrowser warningsToBrowser/;
 use XML::Simple;
+use XML::Parser;
 use HTTP::Date qw/time2iso time2str/;
 use FileHandle;
-use Data::Dumper; # for debugging purposes, mostly
-use vars qw/$q $path $survey_type/;
+#use Data::Dumper; # for debugging purposes, mostly
+use vars qw/$q $path $survey_type @pgdebug $debug/;
 
-use constant VERSION => '0.1';
+use constant VERSION => '0.2';
 use constant CONFIG_DIR => 'cgi-data/surveys';
-#use constant SCRIPT_URL => 'http://localhost:8888/cgi-bin/surveys.cgi';
-#use constant SCRIPT_URL => 'http://vkocmedb601.eur.nsroot.net/cgi-bin/surveys.cgi';
 use constant SCRIPT_URL => '/cgi-bin/surveys.cgi';
 use constant COOKIE_NAME => 'net.nsroot.vkocmedb601.cgi.surveys.soe';
 
@@ -27,7 +26,9 @@ $ENV{REQUEST_METHOD} = 'GET' unless defined $ENV{REQUEST_METHOD};
 $q = new CGI;
 $path = $q->path_info();
 $survey_type = 'Surveys';
-#$| = 1; # Tell Perl not to buffer our output
+
+# Enable debugging
+$debug = 0;
 
 # HTTP method processing routines
 #
@@ -84,7 +85,7 @@ EOH
 }
 
 
-# Function: getLocal_path(ID)
+# Function: get_local_path(ID)
 #
 # Returns the ful path to a file requested.
 sub get_local_path($) {
@@ -100,6 +101,13 @@ sub absolute_url($) {
     return $q->url() . $path;
 }
 
+
+sub debug_trace ($@) {
+  return unless $survey::debug;
+  my $status = shift || 'info';
+  my @msg = @_;
+  push @pgdebug, p({class=>'debug_'.$status},@msg);
+}
 
 
 #
@@ -120,6 +128,7 @@ eval {
   # surveys list
   GET qr{^/survey/?$} => sub {
     standard_headers('Available Surveys');
+    debug_trace ('info','calling list_all_surveys');
     list_all_surveys();
   };
 
@@ -143,7 +152,7 @@ eval {
     my $survey = read_survey(get_local_path($sid));
 
     authenticate_admin_user ($sid) unless survey_admin_cookie_set_p();
-    standard_headers ( $survey->{'description'} );
+    standard_headers ($survey->{'description'}, 0, $sid);
     build_survey_report ($sid);
   };
 
@@ -157,84 +166,9 @@ eval {
   POST qr{^/survey/answer/([-_[:alnum:]]+)$} => sub {
     my $sid = $1;
     my $data = $q->Vars;
-    my $survey = read_survey(get_local_path($data->{s}));
-    my $sso = $q->cookie(COOKIE_NAME);
-    my $qq = scalar keys %{$survey->{question}};
-    my $pr = $survey->{passRate} || 0;
 
-    set_survey_taken_cookie($sid);
-    standard_headers('Your Results', 1);
-
-    print $q->h1('You have completed the test, thank you.');
-
-    # We will hash good/bad answers and combine the submission into $answers
-    # with a bit of extra meta info.
-    my (%good,%bad,$answers,$t,$f);
-
-    # Log time, SOE ID and host IP
-    $answers = time2iso().'|'.$sso.'|'.$ENV{REMOTE_ADDR}.'|'.$sid.'|';
-
-    map {
-      my ($x,$qkey) = split /:q/;
-      my $qval = $data->{$_};
-      $answers .= 'q'.$qkey.':'.$qval.'|' if defined $qkey;
-
-      if (defined $qkey && defined $qval) {
-        if ($survey->{question}->{$qkey}->{answerKey} eq $qval) {
-          $good{$qkey} = $qval;
-        } else {
-          $bad{$qkey} = $qval unless $qkey eq ''; # remove extras, not answers
-        }
-      }
-    } keys %{$data};
-
-    $t = scalar keys %good;
-    $f = scalar keys %bad;
-    $answers .= $t.'|'.$f;
-    save_score($sid,$answers);
-
-    my $p = round($t / $qq * 100, 2);
-
-    print $q->p('You have responded correctly to ',
-                $q->span({class=>'you'},$t),
-                ' out of ',
-                $q->span({class=>'total'},$qq),
-                ' questions ('.$q->span({class=>'pcnt'},$p).'% score).');
-    print $q->p('Congratulations, this is a perfect score!') if ($f == 0);
-
-    if ($survey->{verboseResults} =~ m/yes/i) {
-      if ($t >= $pr) {
-        # we want verbose results and survey has been passed (we have at least
-        # $pr correct answers)
-        if ($f > 0) {
-          print $q->p('The following questions were not answered correctly:');
-          my @errors;
-          map {
-            my $hint = $survey->{question}->{$_}->{'answerHint'};
-            $hint = "($hint)" if defined $hint;
-            push @errors, $q->li('Question',$_.': ',$survey->{question}->{$_}->{'text'},
-                                 $q->ul($q->li({class=>'youra'},'Your response: ',
-                                               $q->span({class=>'bad'},$bad{$_})),
-                                        $q->li({class=>'correcta'},'Correct answer is: ',
-                                               $q->strong(' '.$survey->{question}->{$_}->{answerKey}),
-                                               $q->span({class=>'hint'},$hint))));
-          } sort {$a <=> $b} keys %bad;
-          print $q->ul({class=>'errors'}, @errors);
-          print $q->p('If you want to improve your score, you can ',
-                      $q->a({href=>"/cgi-bin/surveys.cgi/survey/$sid"},'take the survey again'),'.');
-        }
-      } else {
-        print $q->p("You need to answer at least <span class='pass'>$pr</span> questions correctly to pass.",
-                    'You have not been able to attain a passing grade and should ',
-                    $q->a({href=>"/cgi-bin/surveys.cgi/survey/$sid"},'take the survey again').'.');
-      }
-    } else {
-      # no verbosity required
-    }
-
-    print $q->end_html;
+    validate_and_store_answers ($sid, $data);
     exit;
-
   };
 
 
@@ -282,6 +216,7 @@ sub glob_dir () {
   opendir(DIR, CONFIG_DIR);
   my @files = grep { /\.xml$/ } readdir(DIR);
   closedir(DIR);
+  debug_trace ('info','calling list_all_surveys', @files);
   return @files;
 }
 
@@ -325,10 +260,11 @@ sub list_all_surveys(;$) {
 #   Hash reference containing the representation of XML file.
 sub read_survey ($) {
   my $survey_file = shift;
+  debug_trace ('info','in read_survey', $survey_file);
   confess "No name has been supplied for survey file!" unless defined $survey_file;
   confess "The file `$survey_file' does not exist!" if !(-e $survey_file);
   my $xs = new XML::Simple (ForceArray => 1, KeepRoot => 0, KeyAttr => ['key']);
-  return $xs->XMLin($survey_file);
+  return $xs->XMLin($survey_file) or debug_trace('error',$@);
 }
 
 
@@ -367,7 +303,7 @@ sub standard_headers ($;$$$) {
                                -style=>{'src'=>['/css/surveys.css','/css/light.css']},
                                -script=>
                                [ { -type => 'text/javascript',
-                                   -src      => '/lib/prototype-1.6.js'
+                                   -src      => '/lib/prototype.js'
                                  },
                                  { -type => 'text/javascript',
                                    -src      => '/lib/branding.js'
@@ -392,7 +328,7 @@ sub breadcrubms($$) {
   push @bcrumbs, $q->li( a( { href=>absolute_url('/') }, 'Surveys Home' ) );
   if (defined $sid) {
     push @bcrumbs, $q->li( { class=>'leftTab' }, '' );
-    push @bcrumbs, $q->li( a( { href=>absolute_url("/survey/$sid") }, $title) );
+    push @bcrumbs, $q->li( a( { href=>absolute_url("/surveys/$sid") }, $title) );
   }
   return $q->ul( {id=>'nav'}, @bcrumbs);
 }
@@ -410,6 +346,7 @@ sub breadcrubms($$) {
 sub build_form ($$) {
   my ($sid,$survey) = @_;
   my @pg;
+        push @pg, $q->start_div( {-id=>'page'} );
   push @pg, $q->h2( {-class=>'surveyDescription'}, $survey->{'description'} );
   push @pg, $q->p( $survey->{'surveyInstructions'} );
   push @pg, $q->start_div( { -class => 'survey' } );
@@ -448,8 +385,7 @@ sub build_form ($$) {
                               -rows=>$rows,
                               -columns=>$cols);
     }
-    push @qaset, $q->li({-class=>'question'},
-                        $q->span({class=>'question'}, $question->{'text'}),
+    push @qaset, $q->li($q->span({class=>'question'}, $question->{'text'}),
                         $q->div({-class=>'answers'},$answers));
 
   } sort {$a <=> $b} keys %{$survey->{'question'}};
@@ -458,7 +394,7 @@ sub build_form ($$) {
   push @pg, $q->div({-id=>'pollSubmit',-class=>'submit'},
                     submit('submit','Submit'));
   print @pg;
-  print $q->endform(),enddiv();
+  print $q->endform(),enddiv(),enddiv();
   return;
 }
 
@@ -542,7 +478,9 @@ sub debug_print (@) {
 # survey page for a given survey ID.
 sub survey_title_link ($) {
   my $sid = shift;
+  debug_trace ('info','in survey_title_link');
   my $s = read_survey(get_local_path($sid));
+  debug_trace ('info','done read_survey', $s);
   my $css = 'active';
   my @sli;
   $css = 'inactive' if $s->{'active'} =~ m/^n/i;
@@ -552,47 +490,20 @@ sub survey_title_link ($) {
                      a( { class => 'button', href => absolute_url('/survey/edit/'.$sid) }, 'Edit'), ' ',
                      span({class=>'small'},"[ $sid ]"));
   push @sli, ($css eq 'active' ? '' : span({class=>'status'},' — Inactive') );
+  debug_trace ('info',@sli);
   return join "\n", @sli;
   #return $x;
 }
 
-# Function: build_survey_report (SID)
+# Function: build_survey_report(SID)
 #
 # Reporting for a survey SID
 sub build_survey_report ($) {
   my $sid = shift;
-  my @rep;
-  my $resp = read_survey_responses ($sid);
+  my $responses = read_survey_responses ($sid);
   my $survey = read_survey(get_local_path($sid));
   print $q->h1('Summary results for',$survey->{'description'});
-  my $pass_rate = $survey->{'passRate'};
-  #print $q->pre(Dumper($resp));
-  #print $q->p($resp->{'2008-03-06'}->{'ap72658'}->{'2008-03-06 18:12:48'}->{'bad'});
-  push @rep, $q->li('Total number of times taken:',
-                    strong( $resp->{'times_total'} ),
-                    ', details by day:',
-                    $q->ul( map {
-                      $q->li($_, ':', $resp->{$_}->{'times_day'}) if m/^\d{4}-\d{2}-\d{2}/;
-                    } sort keys %{$resp} ));
-  my ($pass, $fail);
-  $pass = $fail = 0;
-
-  debug_print(Dumper($resp));
-
-  map {
-    my $d = $_;
-    map {
-      my $u = $_;
-      map {
-        $pass++ if $_->[2] >= $pass_rate;
-        $fail++ if $_->[2] < $pass_rate;
-      } @{$resp->{$d}->{$u}};
-    } sort keys %{$resp->{$d}} if ($d =~ m/^\d{4}-\d{2}-\d{2}/);
-  } sort keys %{$resp};
-
-  push @rep, $q->li('Passed: ', $pass);
-  push @rep, $q->li('Failed: ', $fail);
-  print $q->ul(@rep);
+  print $q->pre(Dumper($responses));
   return;
 }
 
@@ -604,31 +515,19 @@ sub build_survey_report ($) {
 sub read_survey_responses ($) {
   my $sid = shift;
   my $db = {};  # define anonymous hash to hold database in
-  open (DB, CONFIG_DIR.'/'.$sid.'.dat') or
-    confess "Cannot open file ${sid}.dat: $!";
+        open (FH, CONFIG_DIR.'/'.$sid.'.db');
 
-  while (<DB>) {
-    chomp;
-    s/\r$//; # strip CRLFs
+  while (<FH>) {
+    s/\r\n$//; # strip CRLFs
+    next if (/^#/);  # skip if start with comment sign
+
     my @r = split /\|/;
     my @answers;
-    map {
-      m/q\d+:(.+)/;
-      push @answers, $1;
-    } @r[4..23];
 
-    my ($d, $t) = split / /,$r[0];
-    my $user = $r[1];
 
-    my @rec = ( $r[0], \@answers, $r[24], $r[25] );
-    push @{$db->{$d}->{$user}}, \@rec;
-    $db->{$d}->{'times_day_user'}->{$user}++;
-    $db->{$d}->{'times_day'}++;
-    $db->{$user}->{'times_user'}++;
-    $db->{'times_total'}++;
   }
 
-  close (DB);
+        close (FH);
   return $db;
 }
 
@@ -676,7 +575,7 @@ sub set_survey_taken_cookie ($) {
 # Saves SCORE into survey log
 sub save_score ($$) {
   my ($sid,$score) = @_;
-  my $fh = new FileHandle CONFIG_DIR.'/'.$sid.'.dat', O_WRONLY|O_APPEND|O_CREAT;
+  my $fh = new FileHandle CONFIG_DIR.'/'.$sid.'.db', O_WRONLY|O_APPEND|O_CREAT;
   if (defined $fh) {
     print $fh $score."\n";
     undef $fh;       # automatically closes the file
@@ -684,6 +583,112 @@ sub save_score ($$) {
     debug_print ('Bummer '.$!.': '.CONFIG_DIR.'/'.$sid.'.dat');
   }
   return;
+}
+
+
+# Function: validate_and_store_answers
+sub validate_and_store_answers ($$) {
+        my $sid = shift;
+        my $data = shift;
+        my $survey = read_survey(get_local_path($data->{s}));
+        my $sso = $q->cookie(COOKIE_NAME);
+        my $qq = scalar keys %{$survey->{question}};
+        my $pr = $survey->{passRate} || 0;
+
+        set_survey_taken_cookie($sid); # not working?
+        standard_headers('Thank you', 1);
+
+        # We will hash good/bad answers and combine the submission into $answers
+        # with a bit of extra meta info.
+        my (%good,%bad,$answers,$t,$f,@page);
+
+        # Log time, SOE ID and host IP
+        $answers = time2iso().'|'.$sso.'|'.$ENV{REMOTE_ADDR}.'|'.$sid.'|';
+
+        # iterate over hash keys in POST data and fillup good/bad hashes
+        map {
+                my ($x,$qkey) = split /:q/;
+                my $qval = $data->{$_};
+                $answers .= 'q'.$qkey.':'.$qval.'|' if defined $qkey;
+
+                if (defined $qkey && defined $qval) {
+                        if ($survey->{question}->{$qkey}->{answerKey} eq $qval) {
+                                $good{$qkey} = $qval;
+                        } else {
+                                $bad{$qkey} = $qval unless $qkey eq ''; # remove extras, not answers
+                        }
+                }
+        } keys %{$data};
+
+        $t = scalar keys %good;
+        $f = scalar keys %bad;
+        $answers .= $t.'|'.$f;
+        save_score($sid,$answers);
+
+        # the next set of actions is surveyType-dependant
+        if ($survey->{'surveyType'} =~ m/test/i ||
+                        $survey->{'surveyType'} =~ m/assess/i) {
+                # this is a test or an assessment
+                push @page, $q->h1('You have completed the test, thank you.');
+                my $p = round($t / $qq * 100, 2);
+                push @page,
+                        $q->p("You have responded correctly to <strong>$t</strong> out of <strong>$qq</strong>",
+                                " questions (<span class='pcnt'>${p}\%</span> score).");
+                push @page, $q->p('Congratulations, this is a perfect score!') if ($f == 0);
+
+                if ($survey->{verboseResults} =~ m/yes/i) {
+                        if ($t >= $pr) {
+                                # user passed the test
+                                if ($f > 0) {
+                                        push @page, $q->p('The following questions were not answered correctly:');
+                                        my @errors;
+                                        map {
+                                                my $hint = $survey->{question}->{$_}->{'answerHint'};
+                                                $hint = "($hint)" if defined $hint;
+                                                push @errors, $q->li('Question',$_.': ',$survey->{question}->{$_}->{'text'},
+                                                                                                                                 $q->ul($q->li({class=>'youra'},'Your response: ',
+                                                                                                                                                                                         $q->span({class=>'bad'},$bad{$_})),
+                                                                                                                                                                $q->li({class=>'correcta'},'Correct answer is: ',
+                                                                                                                                                                                         $q->strong(' '.$survey->{question}->{$_}->{answerKey}),
+                                                                                                                                                                                         $q->span({class=>'hint'},$hint))));
+                                        } sort {$a <=> $b} keys %bad;
+                                        push @page, $q->ul({class=>'errors'}, @errors);
+                                        push @page, $q->p('If you want to improve your score, you can ',
+                                                                                                $q->a({href=>"/cgi-bin/surveys.cgi/survey/$sid"},'take the survey again'),'.');
+                                }
+                        } else {
+                                # user did not pass
+                                push @page, $q->p("You need to answer at least <span class='pass'>$pr</span> questions correctly to pass.",
+                                                                                        'You have not been able to attain a passing grade and should ',
+                                                                                        $q->a({href=>"/cgi-bin/surveys.cgi/survey/$sid"},'take the survey again').'.');
+                        }
+                }
+
+        } elsif ($survey->{'surveyType'} =~ m/poll/i) {
+                push @page, $q->h1('Thank you for participating in our survey.');
+                push @page, show_survey_stats($sid);
+        } else {
+                # bummer -- unknown survey type or it is missing
+        }
+
+        print @page;
+        print $q->end_html;
+}
+
+
+# Function: show_survey_stats
+#
+# For a poll/survey show statistics of what were participant responses
+#
+# Parameters:
+# $sid - Survey ID
+#
+# Returns:
+# A graph/table representing the histogram of responses
+sub show_survey_stats ($) {
+        my $sid = shift;
+        my $db = read_survey_responses ($sid)
+        return 0;
 }
 
 # Function form_extras
@@ -726,7 +731,43 @@ sub round {
 # Self-documenting application this is! :)
 sub show_documentation {
   standard_headers('Survey Application Documentation');
-  print <<"EOD";
+  while (<DATA>) { print; }
+  print $q->end_html;
+}
+
+# finish it
+print $q->div(@pgdebug) if $debug;
+1;
+
+__DATA__
+
+<style type="text/css"><!--
+#doc { margin:1em; width:50em; }
+pre { font-size:0.8em; }
+.syntax0 { color: #000000; }
+.syntax1 { color: #cc0000; }
+.syntax2 { color: #ff8400; }
+.syntax3 { color: #6600cc; }
+.syntax4 { color: #cc6600; }
+.syntax5 { color: #ff0000; }
+.syntax6 { color: #9966ff; }
+.syntax7 { background: #ffffcc; color: #ff0066; }
+.syntax8 { color: #006699; font-weight: bold; }
+.syntax9 { color: #009966; font-weight: bold; }
+.syntax10 { color: #0099ff; font-weight: bold; }
+.syntax11 { color: #66ccff; font-weight: bold; }
+.syntax12 { color: #02b902; }
+.syntax13 { color: #ff00cc; }
+.syntax14 { color: #cc00cc; }
+.syntax15 { color: #9900cc; }
+.syntax16 { color: #6600cc; }
+.syntax17 { color: #0000ff; }
+.syntax18 { color: #000000; font-weight: bold; }
+.gutter { background: #dbdbdb; color: #000000; }
+.gutterH { background: #dbdbdb; color: #990066; }
+dt { margin-top:0.5em; margin-bottom:0.25em;font-weight:bold; }
+--></style>
+
 <div id="doc">
 
 <h1>Survey System Documentation</h1>
@@ -748,32 +789,31 @@ cross-referenced within the CGI application.</p>
 
 <p>Survey definition file must conform to following structure:</p>
 
-<pre class="sample">
-&lt;?xml version="1.0" encoding="utf-8"?>
-&lt;survey id="sid200801"
-        description="Trade Finance Assessment"
-        validFrom="20080324"
-        validTill="20080430"
-        surveyType="Assessment"
-        protected="no"
-        accessKey="&lt;secret_code_word&gt;"
-        verboseResults="yes"
-        passRate="16"
-        logUsers="yes"
-        active="yes">
-
-  &lt;surveyInstructions>
-  ...
-  &lt;/surveyInstructions>
-
-  &lt;question key="1" type="radio" text="Which is not a type of Trade Finance?" answerKey="c">
-    &lt;answer key="a">Trade Loans</answer>
-    &lt;answer key="b">Receivables Purchase</answer>
-    &lt;answer key="c">Collections</answer>
-    &lt;answer key="d">Supplier Finance</answer>
-  &lt;/question>
-&lt;/survey>
-</pre>
+<pre><span class="syntax0"><span class="gutter"> 1:</span><span class="syntax10">&lt;?</span><span class="syntax10">xml</span><span class="syntax10"> </span><span class="syntax10">version=&quot;1.0&quot;</span><span class="syntax10"> </span><span class="syntax10">encoding=&quot;utf-8&quot;?</span><span class="syntax10">&gt;</span>
+<span class="gutter"> 2:</span><span class="syntax17">&lt;</span><span class="syntax17">survey</span><span class="syntax17"> </span><span class="syntax17">id</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">sid200801</span><span class="syntax13">&quot;</span>
+<span class="gutter"> 3:</span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17">description</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">Trade</span><span class="syntax13"> </span><span class="syntax13">Finance</span><span class="syntax13"> </span><span class="syntax13">Assessment</span><span class="syntax13">&quot;</span>
+<span class="gutter"> 4:</span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17">validFrom</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">20080324</span><span class="syntax13">&quot;</span>
+<span class="gutterH"> 5:</span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17">validTill</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">20080430</span><span class="syntax13">&quot;</span>
+<span class="gutter"> 6:</span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17">surveyType</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">Assessment</span><span class="syntax13">&quot;</span>
+<span class="gutter"> 7:</span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17">protected</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">no</span><span class="syntax13">&quot;</span>
+<span class="gutter"> 8:</span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17">accessKey</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">&lt;secret_code_word&gt;</span><span class="syntax13">&quot;</span>
+<span class="gutter"> 9:</span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17">verboseResults</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">yes</span><span class="syntax13">&quot;</span>
+<span class="gutterH">10:</span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17">passRate</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">16</span><span class="syntax13">&quot;</span>
+<span class="gutter">11:</span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17">logUsers</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">yes</span><span class="syntax13">&quot;</span>
+<span class="gutter">12:</span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17"> </span><span class="syntax17">active</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">yes</span><span class="syntax13">&quot;</span><span class="syntax17">&gt;</span>
+<span class="gutter">13:</span>
+<span class="gutter">14:</span>  <span class="syntax17">&lt;</span><span class="syntax17">surveyInstructions</span><span class="syntax17">&gt;</span>
+<span class="gutterH">15:</span>  ...
+<span class="gutter">16:</span>  <span class="syntax17">&lt;</span><span class="syntax17">/</span><span class="syntax17">surveyInstructions</span><span class="syntax17">&gt;</span>
+<span class="gutter">17:</span>
+<span class="gutter">18:</span>  <span class="syntax17">&lt;</span><span class="syntax17">question</span><span class="syntax17"> </span><span class="syntax17">key</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">1</span><span class="syntax13">&quot;</span><span class="syntax17"> </span><span class="syntax17">type</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">radio</span><span class="syntax13">&quot;</span><span class="syntax17"> </span><span class="syntax17">text</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">Which</span><span class="syntax13"> </span><span class="syntax13">is</span><span class="syntax13"> </span><span class="syntax13">not</span><span class="syntax13"> </span><span class="syntax13">a</span><span class="syntax13"> </span><span class="syntax13">type</span><span class="syntax13"> </span><span class="syntax13">of</span><span class="syntax13"> </span><span class="syntax13">Trade</span><span class="syntax13"> </span><span class="syntax13">Finance?</span><span class="syntax13">&quot;</span><span class="syntax17"> </span><span class="syntax17">answerKey</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">c</span><span class="syntax13">&quot;</span><span class="syntax17">&gt;</span>
+<span class="gutter">19:</span>    <span class="syntax17">&lt;</span><span class="syntax17">answer</span><span class="syntax17"> </span><span class="syntax17">key</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">a</span><span class="syntax13">&quot;</span><span class="syntax17">&gt;</span>Trade Loans<span class="syntax17">&lt;</span><span class="syntax17">/</span><span class="syntax17">answer</span><span class="syntax17">&gt;</span>
+<span class="gutterH">20:</span>    <span class="syntax17">&lt;</span><span class="syntax17">answer</span><span class="syntax17"> </span><span class="syntax17">key</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">b</span><span class="syntax13">&quot;</span><span class="syntax17">&gt;</span>Receivables Purchase<span class="syntax17">&lt;</span><span class="syntax17">/</span><span class="syntax17">answer</span><span class="syntax17">&gt;</span>
+<span class="gutter">21:</span>    <span class="syntax17">&lt;</span><span class="syntax17">answer</span><span class="syntax17"> </span><span class="syntax17">key</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">c</span><span class="syntax13">&quot;</span><span class="syntax17">&gt;</span>Collections<span class="syntax17">&lt;</span><span class="syntax17">/</span><span class="syntax17">answer</span><span class="syntax17">&gt;</span>
+<span class="gutter">22:</span>    <span class="syntax17">&lt;</span><span class="syntax17">answer</span><span class="syntax17"> </span><span class="syntax17">key</span><span class="syntax17">=</span><span class="syntax13">&quot;</span><span class="syntax13">d</span><span class="syntax13">&quot;</span><span class="syntax17">&gt;</span>Supplier Finance<span class="syntax17">&lt;</span><span class="syntax17">/</span><span class="syntax17">answer</span><span class="syntax17">&gt;</span>
+<span class="gutter">23:</span>  <span class="syntax17">&lt;</span><span class="syntax17">/</span><span class="syntax17">question</span><span class="syntax17">&gt;</span>
+<span class="gutter">24:</span><span class="syntax17">&lt;</span><span class="syntax17">/</span><span class="syntax17">survey</span><span class="syntax17">&gt;</span>
+</span></pre>
 
 <p>You can <a
 href="http://russia.citigroup.net/departments/cibtech/xml/def/survey.rnc">download</a>
@@ -951,9 +991,4 @@ q7:"An<span class="meta">\\t</span>answer with<span class="meta">\\n</span>chara
 <p>There are a few.</p>
 
 </div>
-EOD
-  print $q->end_html;
-}
 
-# finish it
-1;
