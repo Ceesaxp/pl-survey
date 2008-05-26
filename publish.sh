@@ -19,7 +19,10 @@ case $1 in
         ;;
 esac
 
-cp surveys.cgi $DST_CGI
-cp cgi-data/surveys/*.xml $DST_DATA
-cp css/surveys.css $DST_CSS
+#cp surveys.cgi $DST_CGI
+#cp cgi-data/surveys/*.xml $DST_DATA
+#cp css/surveys.css $DST_CSS
 
+rsync *.cgi $DST_CGI
+rsync -av --exclude '.svn*' --exclude '*~' cgi-data/ $DST_DATA
+rsync css/surveys.css $DST_CSS
