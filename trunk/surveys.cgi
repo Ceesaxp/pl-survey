@@ -4,15 +4,16 @@
 package survey;
 
 use strict qw/vars/;
+my $start = (times)[0];
 use warnings;
 use CGI qw/:standard/;
 use CGI::Cookie;
 use CGI::Carp qw/fatalsToBrowser warningsToBrowser/;
 use XML::Simple;
-use XML::Parser;
+#use XML::Parser;
 use HTTP::Date qw/time2iso time2str/;
 use FileHandle;
-#use Data::Dumper; # for debugging purposes, mostly
+use Data::Dumper; # for debugging purposes, mostly
 use vars qw/$q $path $survey_type @pgdebug $debug/;
 
 use constant VERSION => '0.2';
@@ -29,6 +30,7 @@ $survey_type = 'Surveys';
 
 # Enable debugging
 $debug = 0;
+#binmode STDERR, ":utf8";
 
 # HTTP method processing routines
 #
@@ -127,9 +129,9 @@ eval {
 
   # surveys list
   GET qr{^/survey/?$} => sub {
-    standard_headers('Available Surveys');
+    print standard_headers('Available Surveys');
     debug_trace ('info','calling list_all_surveys');
-    list_all_surveys();
+    print list_all_surveys();
   };
 
   # show survey
@@ -138,11 +140,11 @@ eval {
     my $survey = read_survey(get_local_path($sid));
 
     authenticate_user($sid) if ( $survey->{protected} eq 'yes'
-                                 and !survey_cookie_set_p() );
-    already_taken($sid) if defined $q->cookie("survey.$sid");
-    standard_headers($survey->{'description'}, 0, $sid);
-    build_form($sid, $survey);
-    form_extras($sid);
+                                  and !survey_cookie_set_p() );
+    already_taken ($sid) if defined $q->cookie("survey.$sid");
+    print standard_headers($survey->{'description'}, 0, $sid);
+    print build_form($sid, $survey);
+    print form_extras($sid);
   };
 
 
@@ -152,22 +154,21 @@ eval {
     my $survey = read_survey(get_local_path($sid));
 
     authenticate_admin_user ($sid) unless survey_admin_cookie_set_p();
-    standard_headers ($survey->{'description'}, 0, $sid);
-    build_survey_report ($sid);
+    print standard_headers ($survey->{'description'}, 0, $sid);
+    print build_survey_report ($sid);
   };
 
   # editing survey content !!FIXME!!
   GET qr{^/survey/edit/([-_[:alnum:]]+)$} => sub {
     my $sid = $1;
-    standard_headers('Edit Survey Parameters') && survey_edit_form($sid);
+    print standard_headers('Edit Survey Parameters') && survey_edit_form($sid);
   };
 
   # accept answers to a survey
   POST qr{^/survey/answer/([-_[:alnum:]]+)$} => sub {
     my $sid = $1;
     my $data = $q->Vars;
-
-    validate_and_store_answers ($sid, $data);
+    validate_and_store_answers($sid, $data);
     exit;
   };
 
@@ -244,8 +245,7 @@ sub list_all_surveys(;$) {
     $q->p('You can either run (take) any of these surveys or administer them.'),
       $q->p('Note that you have to be a survey admin to make changes to survey setups.'),
         $q->end_html;
-  print @page;
-  return;
+  return @page;
 }
 
 
@@ -260,7 +260,6 @@ sub list_all_surveys(;$) {
 #   Hash reference containing the representation of XML file.
 sub read_survey ($) {
   my $survey_file = shift;
-  debug_trace ('info','in read_survey', $survey_file);
   confess "No name has been supplied for survey file!" unless defined $survey_file;
   confess "The file `$survey_file' does not exist!" if !(-e $survey_file);
   my $xs = new XML::Simple (ForceArray => 1, KeepRoot => 0, KeyAttr => ['key']);
@@ -303,7 +302,7 @@ sub standard_headers ($;$$$) {
                                -style=>{'src'=>['/css/surveys.css','/css/light.css']},
                                -script=>
                                [ { -type => 'text/javascript',
-                                   -src      => '/lib/prototype.js'
+                                   -src      => '/lib/prototype-1.6.js'
                                  },
                                  { -type => 'text/javascript',
                                    -src      => '/lib/branding.js'
@@ -312,8 +311,7 @@ sub standard_headers ($;$$$) {
                                ] );
   push @output, $q->div( { id=>'branding' }, '' );
   push @output, $q->div( { id=>'navigation' }, breadcrubms($title, $sid) );
-  print @output;
-  return;
+  return @output;
 }
 
 
@@ -345,14 +343,14 @@ sub breadcrubms($$) {
 #   Outputs HTML form
 sub build_form ($$) {
   my ($sid,$survey) = @_;
-  my @pg;
-        push @pg, $q->start_div( {-id=>'page'} );
-  push @pg, $q->h2( {-class=>'surveyDescription'}, $survey->{'description'} );
-  push @pg, $q->p( $survey->{'surveyInstructions'} );
-  push @pg, $q->start_div( { -class => 'survey' } );
-  push @pg, $q->start_form(-id=>"$sid", -method=>'post',
-                       -action => absolute_url('')."/survey/answer/$sid");
-  push @pg, $q->hidden(-name => 'mode', -value => 'r'),
+  my @page;
+  push @page, $q->start_div( {-id=>'page'} );
+  push @page, $q->h2( {-class=>'surveyDescription'}, $survey->{'description'} );
+  push @page, $q->p( $survey->{'surveyInstructions'} );
+  push @page, $q->start_div( { -class => 'survey' } );
+  push @page, $q->start_form(-id=>"$sid", -method=>'post',
+                           -action => absolute_url('')."/survey/answer/$sid");
+  push @page, $q->hidden(-name => 'mode', -value => 'r'),
     $q->hidden(-name => 's', -value => $sid);
 
   my @qaset;
@@ -385,17 +383,19 @@ sub build_form ($$) {
                               -rows=>$rows,
                               -columns=>$cols);
     }
+    print STDERR "*** $question->{'text'}";
     push @qaset, $q->li($q->span({class=>'question'}, $question->{'text'}),
                         $q->div({-class=>'answers'},$answers));
 
   } sort {$a <=> $b} keys %{$survey->{'question'}};
 
-  push @pg, $q->ol({-class=>'qaset'}, @qaset);
-  push @pg, $q->div({-id=>'pollSubmit',-class=>'submit'},
-                    submit('submit','Submit'));
-  print @pg;
-  print $q->endform(),enddiv(),enddiv();
-  return;
+  push @page, $q->ol({-class=>'qaset'}, @qaset);
+  push @page, $q->div({-id=>'pollSubmit',-class=>'submit'},
+                      submit('submit','Submit'));
+  push @page, $q->endform();
+  push @page, $q->end_div();
+  push @page, $q->end_div();
+  return @page;
 }
 
 
@@ -408,7 +408,7 @@ sub build_form ($$) {
 #   SURVEY_ID - Survey ID to perform authentication for
 sub authenticate_user ($) {
   my $sid = shift;
-  standard_headers('Log in');
+  print standard_headers('Log in');
   print $q->div({id=>'auth'},
                 $q->start_form(-method => 'post',
                                -action => absolute_url("/survey/auth/$sid")),
@@ -456,7 +456,7 @@ sub no_entry {
 # Parameters:
 #   SURVEY_ID - ID for the survey
 sub already_taken ($) {
-  standard_headers('You have already completed this survey');
+  print standard_headers('You have already completed this survey');
   print $q->h1('You have already taken this survey.'),$q->end_tml;
   exit;
 }
@@ -518,16 +518,14 @@ sub read_survey_responses ($) {
         open (FH, CONFIG_DIR.'/'.$sid.'.db');
 
   while (<FH>) {
-    s/\r\n$//; # strip CRLFs
-    next if (/^#/);  # skip if start with comment sign
-
+    s/\r\n$//;          # strip CRLFs
+    next if (/^#/);     # skip comments
     my @r = split /\|/;
-    my @answers;
-
+    my @answers = @r[4..-2];
 
   }
 
-        close (FH);
+  close (FH);
   return $db;
 }
 
@@ -586,93 +584,116 @@ sub save_score ($$) {
 }
 
 
+# Finction: sanatize_input(VALUE)
+#
+# Cleans input, brute force, at least for now.
+sub sanatize_input($) {
+  my $val = shift;
+  my $html_tags = qr(p|a|i|b|em|strong|span|script|h[1-6]|li|ol|ul|dl|dt|dd|strike|sub|sub|font|style|br|form|input|button|table|td|tr|th|tbody|thead|tfoot|div);
+
+  # strip new lines and some control characters
+  $val =~ s/[\n\r\l]/ /g;       # alternative approach could be to replace some
+                                # of these with meta representations, so that in
+                                # print form line breaks and such remains.
+
+  $val =~ s/<\/?${html_tags}[^>]*\/?>//g; # strip all listed HTML tags, very
+                                          # crude
+  return $val;
+}
+
+
 # Function: validate_and_store_answers
 sub validate_and_store_answers ($$) {
-        my $sid = shift;
-        my $data = shift;
-        my $survey = read_survey(get_local_path($data->{s}));
-        my $sso = $q->cookie(COOKIE_NAME);
-        my $qq = scalar keys %{$survey->{question}};
-        my $pr = $survey->{passRate} || 0;
+  my $sid = shift;
+  my $data = shift;
+  my $survey = read_survey(get_local_path($data->{s}));
+  my $sso = $q->cookie(COOKIE_NAME) || 'ANON';
+  my $qq = scalar keys %{$survey->{question}};
+  my $pr = $survey->{passRate} || 0;
 
-        set_survey_taken_cookie($sid); # not working?
-        standard_headers('Thank you', 1);
+  set_survey_taken_cookie($sid); # not working?
+  print standard_headers('Thank you', 1);
 
-        # We will hash good/bad answers and combine the submission into $answers
-        # with a bit of extra meta info.
-        my (%good,%bad,$answers,$t,$f,@page);
+  # We will hash good/bad answers and combine the submission into $answers
+  # with a bit of extra meta info.
+  my (%good,%bad,$answers,$t,$f,@page);
 
-        # Log time, SOE ID and host IP
-        $answers = time2iso().'|'.$sso.'|'.$ENV{REMOTE_ADDR}.'|'.$sid.'|';
+  my $ip;
+  $survey->{'logUsers'} =~ /yes|true/ ? $ip = $ENV{REMOTE_ADDR} : $ip = 'NOTSTORED';
 
-        # iterate over hash keys in POST data and fillup good/bad hashes
-        map {
-                my ($x,$qkey) = split /:q/;
-                my $qval = $data->{$_};
-                $answers .= 'q'.$qkey.':'.$qval.'|' if defined $qkey;
+  # Log time, SOE ID and host IP
+  $answers = time2iso().'|'.$sso.'|'.$ip.'|'.$sid.'|';
 
-                if (defined $qkey && defined $qval) {
-                        if ($survey->{question}->{$qkey}->{answerKey} eq $qval) {
-                                $good{$qkey} = $qval;
-                        } else {
-                                $bad{$qkey} = $qval unless $qkey eq ''; # remove extras, not answers
-                        }
-                }
-        } keys %{$data};
+  # iterate over hash keys in POST data and fillup good/bad hashes
+  map {
+    my ($x,$qkey) = split /:q/;
+    my $qval = $data->{$_};
+    $qval = sanatize_input($qval);
+    $answers .= 'q'.$qkey.':'.$qval.'|' if defined $qkey;
 
-        $t = scalar keys %good;
-        $f = scalar keys %bad;
-        $answers .= $t.'|'.$f;
-        save_score($sid,$answers);
+    if (defined $qkey && defined $qval) {
+      if ($survey->{question}->{$qkey}->{answerKey} eq $qval) {
+        $good{$qkey} = $qval;
+      } else {
+        $bad{$qkey} = $qval unless $qkey eq ''; # remove extras, not answers
+      }
+    }
+  } keys %{$data};
 
-        # the next set of actions is surveyType-dependant
-        if ($survey->{'surveyType'} =~ m/test/i ||
-                        $survey->{'surveyType'} =~ m/assess/i) {
-                # this is a test or an assessment
-                push @page, $q->h1('You have completed the test, thank you.');
-                my $p = round($t / $qq * 100, 2);
-                push @page,
-                        $q->p("You have responded correctly to <strong>$t</strong> out of <strong>$qq</strong>",
-                                " questions (<span class='pcnt'>${p}\%</span> score).");
-                push @page, $q->p('Congratulations, this is a perfect score!') if ($f == 0);
+  $t = scalar keys %good;
+  $f = scalar keys %bad;
+  $answers .= $t.'|'.$f;
+  save_score($sid,$answers);
 
-                if ($survey->{verboseResults} =~ m/yes/i) {
-                        if ($t >= $pr) {
-                                # user passed the test
-                                if ($f > 0) {
-                                        push @page, $q->p('The following questions were not answered correctly:');
-                                        my @errors;
-                                        map {
-                                                my $hint = $survey->{question}->{$_}->{'answerHint'};
-                                                $hint = "($hint)" if defined $hint;
-                                                push @errors, $q->li('Question',$_.': ',$survey->{question}->{$_}->{'text'},
-                                                                                                                                 $q->ul($q->li({class=>'youra'},'Your response: ',
-                                                                                                                                                                                         $q->span({class=>'bad'},$bad{$_})),
-                                                                                                                                                                $q->li({class=>'correcta'},'Correct answer is: ',
-                                                                                                                                                                                         $q->strong(' '.$survey->{question}->{$_}->{answerKey}),
-                                                                                                                                                                                         $q->span({class=>'hint'},$hint))));
-                                        } sort {$a <=> $b} keys %bad;
-                                        push @page, $q->ul({class=>'errors'}, @errors);
-                                        push @page, $q->p('If you want to improve your score, you can ',
-                                                                                                $q->a({href=>"/cgi-bin/surveys.cgi/survey/$sid"},'take the survey again'),'.');
-                                }
-                        } else {
-                                # user did not pass
-                                push @page, $q->p("You need to answer at least <span class='pass'>$pr</span> questions correctly to pass.",
-                                                                                        'You have not been able to attain a passing grade and should ',
-                                                                                        $q->a({href=>"/cgi-bin/surveys.cgi/survey/$sid"},'take the survey again').'.');
-                        }
-                }
+  # the next set of actions is surveyType-dependant
+  if ($survey->{'surveyType'} =~ m/test/i ||
+      $survey->{'surveyType'} =~ m/assess/i) {
+    # this is a test or an assessment
+    push @page, $q->h1('You have completed the test, thank you.');
+    my $p = round($t / $qq * 100, 2);
+    push @page,
+      $q->p("You have responded correctly to <strong>$t</strong> out of <strong>$qq</strong>",
+            " questions (<span class='pcnt'>${p}\%</span> score).");
+    push @page, $q->p('Congratulations, this is a perfect score!') if ($f == 0);
 
-        } elsif ($survey->{'surveyType'} =~ m/poll/i) {
-                push @page, $q->h1('Thank you for participating in our survey.');
-                push @page, show_survey_stats($sid);
-        } else {
-                # bummer -- unknown survey type or it is missing
+    if ($survey->{verboseResults} =~ m/yes/i) {
+      if ($t >= $pr) {
+        # user passed the test
+        if ($f > 0) {
+          push @page, $q->p('The following questions were not answered correctly:');
+          my @errors;
+          map {
+            my $hint = $survey->{question}->{$_}->{'answerHint'};
+            $hint = "($hint)" if defined $hint;
+            push @errors, $q->li('Question',$_.': ',$survey->{question}->{$_}->{'text'},
+                                 $q->ul($q->li({class=>'youra'},'Your response: ',
+                                               $q->span({class=>'bad'},$bad{$_})),
+                                        $q->li({class=>'correcta'},'Correct answer is: ',
+                                               $q->strong(' '.$survey->{question}->{$_}->{answerKey}),
+                                               $q->span({class=>'hint'},$hint))));
+          } sort {$a <=> $b} keys %bad;
+          push @page, $q->ul({class=>'errors'}, @errors);
+          push @page, $q->p('If you want to improve your score, you can ',
+                            $q->a({href=>"/cgi-bin/surveys.cgi/survey/$sid"},'take the survey again'),'.');
         }
+      } else {
+        # user did not pass
+        push @page, $q->p("You need to answer at least <span class='pass'>$pr</span> questions correctly to pass.",
+                          'You have not been able to attain a passing grade and should ',
+                          $q->a({href=>"/cgi-bin/surveys.cgi/survey/$sid"},'take the survey again').'.');
+      }
+    }
 
-        print @page;
-        print $q->end_html;
+  } elsif ($survey->{'surveyType'} =~ m/poll/i) {
+    push @page, $q->h1('Thank you for participating in our survey.');
+    push @page, show_survey_stats($sid);
+  } else {
+    # bummer -- unknown survey type or it is missing
+  }
+
+  print @page;
+  print $q->end_html;
+  return;
 }
 
 
@@ -686,9 +707,67 @@ sub validate_and_store_answers ($$) {
 # Returns:
 # A graph/table representing the histogram of responses
 sub show_survey_stats ($) {
-        my $sid = shift;
-        my $db = read_survey_responses ($sid)
-        return 0;
+  my $sid = shift;
+  my $survey = read_survey ($sid);
+  my $res = read_survey_responses ($sid);
+  my $totals = {}; # add up responses per question
+  my $count = 0;   # add up all responses
+  my @page;        # page struct
+  my $p;
+  my @comments;    # we will store the list of question IDs that are
+                   # comments here for further processing
+  my $compact = 0;
+
+  push @page, $q->start_div({-class=>'surveyResults'});
+  push @page, $q->p('Total responses collected: ',$count) unless $compact;
+
+  foreach my $k (sort keys %{$res->{'question'}}) {
+    # If we come across a comment-type question, we store it's number
+    # in a list and skip forward
+    (push @comments, $k) && last if $res->{'question'}->{$k}->{'type'} eq 'comment';
+
+    push @page, start_div({-class=>'surveySnswers'});
+    push @page, h3($res->{'question'}->{$k}->{'text'});
+    push @page, start_table();
+    push @page, Tr(th('Answers'),th('Replies'),th('%/Total'),th('')) unless $compact;
+    my $ans = $$res{$k};
+
+    foreach my $a (sort keys %$ans) {
+      $p = $res->{'question'}->{$k}->{'answer'}->{$a} / $$totals{$k} * 100;
+      $p = round($p, 2);
+      if ($compact) {
+	push @page, Tr(td(shortened($res->{'question'}->{$k}->{'answer'}->{$a}->{'content'},4)),
+                       td({-class=>'graph'},bar($p)));
+      } else {
+	push @page, Tr(td($res->{'question'}->{$k}->{answer}->{$a}->{'content'}),
+                       td({-class=>'number'},$res->{'question'}->{$k}->{'answer'}->{$a}),
+                       td({-class=>'number'},"${p}%"),
+                       td({-class=>'graph'},bar($p)));
+      }
+    }
+
+    push @page, Tr(th('Totals'),
+                   th({-class=>'number'},$$totals{$k}),
+                   th({-class=>'number'},''),th('')) unless $compact;
+    push @page, end_table();
+    push @page, end_div();
+  }
+
+  push @page, h2('Free-form comments') if scalar @comments > 0;
+
+  # Listing out comment-type replies
+  foreach my $k (@comments) {
+    push @page, start_div({-class=>'surveySnswers'});
+    push @page, h3($res->{'question'}->{$k}->{'text'});
+    push @page, start_ul({-class=>'comments'});
+    my $a = $res->{'question'}->{$k}->{'comments'};
+    map {push @page, li($_)} @$a;
+    push @page, end_ul();
+  }
+
+  push @page, end_div();
+
+  return @page;
 }
 
 # Function form_extras
@@ -730,13 +809,16 @@ sub round {
 #
 # Self-documenting application this is! :)
 sub show_documentation {
-  standard_headers('Survey Application Documentation');
-  while (<DATA>) { print; }
+  print standard_headers('Survey Application Documentation');
+  my @doc = <DATA>;
+  print @doc;
   print $q->end_html;
 }
 
 # finish it
 print $q->div(@pgdebug) if $debug;
+my $end = (times)[0];
+printf "<br/>Elapsed time: %.2f seconds!\n", $end - $start if $debug;
 1;
 
 __DATA__
