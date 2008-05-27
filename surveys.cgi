@@ -389,7 +389,6 @@ sub build_form ($$) {
                               -rows=>$rows,
                               -columns=>$cols);
     }
-    print STDERR "*** $question->{'text'}";
     push @qaset, $q->li($q->span({class=>'question'}, $question->{'text'}),
                         $q->div({-class=>'answers'},$answers));
 
@@ -615,7 +614,7 @@ sub sanatize_input($) {
   my $html_tags = qr(p|a|i|b|em|strong|span|script|h[1-6]|li|ol|ul|dl|dt|dd|strike|sub|sub|font|style|br|form|input|button|table|td|tr|th|tbody|thead|tfoot|div);
 
   # strip new lines and some control characters
-  $val =~ s/[\n\r\l]/ /g;       # alternative approach could be to replace some
+  $val =~ s/[\n\r\l]/\\n/g;     # alternative approach could be to replace some
                                 # of these with meta representations, so that in
                                 # print form line breaks and such remains.
 
@@ -629,7 +628,7 @@ sub sanatize_input($) {
 sub validate_and_store_answers ($$) {
   my $sid = shift;
   my $data = shift;
-  $survey = read_survey(get_local_path($data->{s}));
+  $survey = read_survey(get_local_path($data->{'s'}));
   my $sso = $q->cookie(COOKIE_NAME) || 'ANON';
   my $qq = scalar keys %{$survey->{question}};
   my $pr = $survey->{passRate} || 0;
@@ -778,21 +777,45 @@ sub show_survey_stats ($) {
   push @page, $q->end_div();
 
   if ( scalar @comments > 0 ) {
-    push @page, h3('Free-form comments');
+    push @page, h3('Participant comments');
 
     # Listing out comment-type replies
     push @page, start_div({-class=>'surveySnswers'});
     foreach my $k (@comments) {
-      push @page, h4($survey->{'question'}->{$k}->{'text'});
+      push @page, $q->h4($survey->{'question'}->{$k}->{'text'});
       my $a = $res->{'resp'}->{$k}->{'a'};
+      #push @page, $q->pre(Dumper($a));
       my @li;
-      map { push @li, $q->li($a->{$_}->{'contents'}) } sort keys %{$a};
+      map { push @li, $q->div(reformat($_)) } sort keys %{$a};
       push @page, $q->ul({-class=>'comments'}, @li);
     }
     push @page, $q->end_div();
   }
 
   return @page;
+}
+
+# reformat
+sub reformat($) {
+  my $txt = shift;
+  my @blocks = split qr%\\n\\n%, $txt;
+  my @rtxt;
+  foreach my $block (@blocks) {
+    next if $block =~ /^$/;
+	$block =~ s%\*([^*]+)\*%<strong>$1</strong>%g;
+	$block =~ s%_([^_]+)_%<em>$1</em>%g;
+	if ($block =~ /^   - /) {
+	  my $tmp;
+	  map { $tmp .= "<li>$_</li>"; } split qr{\s\s\s\-\s}, $block;
+	  $block = "\n<ul>$tmp</ul>\n";
+	  #$block =~ s%\\n%%g;
+	} else {
+	  $block =~ s%\\n%<br/>%g;
+	  $block = "<p>$block</p>";
+	}
+	push @rtxt, $block;
+  }  
+  return join "\n",@rtxt;
 }
 
 # draw a bar
