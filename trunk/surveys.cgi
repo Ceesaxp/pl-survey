@@ -1,12 +1,13 @@
 #!/usr/bin/perl
 
-
 package survey;
 
 use strict qw/vars/;
 my $start = (times)[0];
-use warnings;
-use CGI qw/:standard/;
+#use warnings;
+use utf8;
+
+use CGI qw/:standard *div *table/;
 use CGI::Cookie;
 use CGI::Carp qw/fatalsToBrowser warningsToBrowser/;
 use XML::Simple;
@@ -14,7 +15,7 @@ use XML::Simple;
 use HTTP::Date qw/time2iso time2str/;
 use FileHandle;
 use Data::Dumper; # for debugging purposes, mostly
-use vars qw/$q $path $survey_type @pgdebug $debug/;
+use vars qw/$q $path $survey_type @pgdebug $debug $survey/;
 
 use constant VERSION => '0.2';
 use constant CONFIG_DIR => 'cgi-data/surveys';
@@ -31,41 +32,42 @@ $survey_type = 'Surveys';
 # Enable debugging
 $debug = 0;
 #binmode STDERR, ":utf8";
+binmode STDOUT, ":utf8";
 
 # HTTP method processing routines
 #
 # They all take PATH regexp and code block CODE as parameter, compare current
 # path_info to the PATH regexp and execute CODE block if they match.
 sub GET($$) {
-    my ($path, $code) = @_;
-    return unless $q->request_method eq 'GET' or $q->request_method eq 'HEAD';
-    return unless $q->path_info =~ $path;
-    $code->();
-    exit;
+  my ($path, $code) = @_;
+  return unless $q->request_method eq 'GET' or $q->request_method eq 'HEAD';
+  return unless $q->path_info =~ $path;
+  $code->();
+  exit;
 }
 
 sub POST($$) {
-    my ($path, $code) = @_;
-    return unless $q->request_method eq 'POST';
-    return unless $q->path_info =~ $path;
-    $code->();
-    exit;
+  my ($path, $code) = @_;
+  return unless $q->request_method eq 'POST';
+  return unless $q->path_info =~ $path;
+  $code->();
+  exit;
 }
 
 sub PUT($$) {
-    my ($path, $code) = @_;
-    return unless $q->request_method eq 'PUT';
-    return unless $q->path_info =~ $path;
-    $code->();
-    exit;
+  my ($path, $code) = @_;
+  return unless $q->request_method eq 'PUT';
+  return unless $q->path_info =~ $path;
+  $code->();
+  exit;
 }
 
 sub DELETE($$) {
-    my ($path, $code) = @_;
-    return unless $q->request_method eq 'DELETE';
-    return unless $q->path_info =~ $path;
-    $code->();
-    exit;
+  my ($path, $code) = @_;
+  return unless $q->request_method eq 'DELETE';
+  return unless $q->path_info =~ $path;
+  $code->();
+  exit;
 }
 
 
@@ -76,7 +78,6 @@ sub DELETE($$) {
 sub barf($$;$) {
   my ($status, $title, $message) = @_;
   my $t = time2str();
-
   carp <<"EOH"
 HTTP/1.0 $status
 Date: $t
@@ -99,8 +100,8 @@ sub get_local_path($) {
 #
 # Returns full URL (host, port, path) to a given PATH
 sub absolute_url($) {
-    my $path = shift;
-    return $q->url() . $path;
+  my $path = shift;
+  return $q->url() . $path;
 }
 
 
@@ -137,8 +138,7 @@ eval {
   # show survey
   GET qr{^/survey/([-_[:alnum:]]+)/?$} => sub {
     my $sid = $1;
-    my $survey = read_survey(get_local_path($sid));
-
+    $survey = read_survey(get_local_path($sid)) unless defined $survey;
     authenticate_user($sid) if ( $survey->{protected} eq 'yes'
                                   and !survey_cookie_set_p() );
     already_taken ($sid) if defined $q->cookie("survey.$sid");
@@ -147,12 +147,18 @@ eval {
     print form_extras($sid);
   };
 
+  # poll graph
+  GET qr{^/survey/graph/([-_[:alnum:]]+)/?$} => sub {
+    my $sid = $1;
+    $survey = read_survey(get_local_path($sid)) unless defined $survey;
+    print standard_headers($survey->{'description'}, 0, $sid);
+    print show_survey_stats($sid);
+  };
 
   # survey rporting
   GET qr{^/survey/report/([-_[:alnum:]]+)/?$} => sub {
     my $sid = $1;
-    my $survey = read_survey(get_local_path($sid));
-
+    $survey = read_survey(get_local_path($sid)) unless defined $survey;
     authenticate_admin_user ($sid) unless survey_admin_cookie_set_p();
     print standard_headers ($survey->{'description'}, 0, $sid);
     print build_survey_report ($sid);
@@ -178,7 +184,7 @@ eval {
   POST qr{^/survey/auth/([-_[:alnum:]]+)$} => sub {
     my $sid = $1;
     my $data = $q->Vars;
-    my $survey = read_survey(get_local_path($sid));
+    $survey = read_survey(get_local_path($sid)) unless defined $survey;
 
     no_entry() if ($data->{skey} ne $survey->{accessKey});
     set_auth_cookie($data->{'sso'});
@@ -289,7 +295,7 @@ sub standard_headers ($;$$$) {
   my (@events, @output);
 
   push @events,
-    "\$('$sid').getElements().each( function(s) { s.checked = false; } );\n" if defined $sid;
+    "\$\$('#$sid input[type=checkbox]').each( function(s) { s.checked = false; } );\n" if defined $sid;
   push @events, "opts = { descriptor : '$stype $survey_type', descriptorColor : 'blue', approvedLogo : 'citigroup' }; var header = new Branding.Header('branding', opts);";
 
   $js = 'Event.observe(window, "load", function() { ';
@@ -466,8 +472,8 @@ sub already_taken ($) {
 #
 # Print out debug information INFO into STDERR.
 sub debug_print (@) {
-  my @in = @_;
-  map { print STDERR "*** DEBUG: $_\n"; } @in;
+  my $in = join "\n", @_;
+  print STDERR "\n*** DEBUG: ${in}\n";
   return;
 }
 
@@ -485,14 +491,19 @@ sub survey_title_link ($) {
   my @sli;
   $css = 'inactive' if $s->{'active'} =~ m/^n/i;
   push @sli, $q->li( { class => $css },
-                     a( { href => absolute_url('/survey/'.$sid) },
-                        $s->{description}),' ',
-                     a( { class => 'button', href => absolute_url('/survey/edit/'.$sid) }, 'Edit'), ' ',
-                     span({class=>'small'},"[ $sid ]"));
-  push @sli, ($css eq 'active' ? '' : span({class=>'status'},' — Inactive') );
+                     a( { href => absolute_url('/survey/'.$sid) }, $s->{description}),' ',
+                     button_link('edit',$sid,'Edit'), ' ',
+                     ( ($s->{'surveyType'} =~ m/poll|survey/i) ? button_link('graph', $sid, 'Results') : '' ),
+                     span({class=>'small'},"[ $sid ]"),
+                     ( $css eq 'active' ? '' : span( {class=>'status'}, ' — Inactive' ) ) );
   debug_trace ('info',@sli);
   return join "\n", @sli;
-  #return $x;
+}
+
+
+sub button_link ($$) {
+  my ( $action, $sid, $link_title ) = @_;
+  return $q->a( { class => 'button', href => absolute_url("/survey/$action/$sid") }, $link_title);
 }
 
 # Function: build_survey_report(SID)
@@ -500,8 +511,8 @@ sub survey_title_link ($) {
 # Reporting for a survey SID
 sub build_survey_report ($) {
   my $sid = shift;
-  my $responses = read_survey_responses ($sid);
-  my $survey = read_survey(get_local_path($sid));
+  my $responses = read_survey_responses($sid);
+  $survey = read_survey(get_local_path($sid)) unless defined $survey;
   print $q->h1('Summary results for',$survey->{'description'});
   print $q->pre(Dumper($responses));
   return;
@@ -515,17 +526,29 @@ sub build_survey_report ($) {
 sub read_survey_responses ($) {
   my $sid = shift;
   my $db = {};  # define anonymous hash to hold database in
-        open (FH, CONFIG_DIR.'/'.$sid.'.db');
+  open my $fh, CONFIG_DIR.'/'.$sid.'.db' || debug_trace('error',$@);
+  binmode $fh, ':encoding(UTF-8)';
+  my $s = read_survey(get_local_path($sid)); # local copy
 
-  while (<FH>) {
-    s/\r\n$//;          # strip CRLFs
-    next if (/^#/);     # skip comments
+  while (<$fh>) {
+    next if (/^#/);             # skip comments
     my @r = split /\|/;
-    my @answers = @r[4..-2];
-
+    my $l = (scalar @r) - 2;    # skip last 2 fields, irrelevant for polls
+    $db->{'g_total'}++;         # increment total response counter
+    map {
+      my ($qkey,$answers) = split /:/;
+      $qkey =~ s/^q//;          # strip off a leading 'q'
+      # multiple choices (check boxes) need to be counted up differently
+      my $mt = ( $s->{'question'}->{$qkey}->{'type'} eq 'multi' ? 1 : 0 );
+      $db->{'resp'}->{$qkey}->{'total'}++ unless $mt;
+      map {
+        $db->{'resp'}->{$qkey}->{'a'}->{$_} += 1;
+        $db->{'resp'}->{$qkey}->{'total'} += 1 if $mt;
+      } split /\00/,$answers;
+    } @r[4..$l];
   }
 
-  close (FH);
+  close ($fh);
   return $db;
 }
 
@@ -536,7 +559,7 @@ sub survey_cookie_set_p {
   return defined $q->cookie(COOKIE_NAME);
 }
 
-# Same as above, but for admin interface
+# Same as above, but for admin interface -- FIXME
 sub survey_admin_cookie_set_p {
   #return defined $q->cookie(ADMIN_COOKIE_NAME);
   return 1;
@@ -606,7 +629,7 @@ sub sanatize_input($) {
 sub validate_and_store_answers ($$) {
   my $sid = shift;
   my $data = shift;
-  my $survey = read_survey(get_local_path($data->{s}));
+  $survey = read_survey(get_local_path($data->{s}));
   my $sso = $q->cookie(COOKIE_NAME) || 'ANON';
   my $qq = scalar keys %{$survey->{question}};
   my $pr = $survey->{passRate} || 0;
@@ -632,7 +655,7 @@ sub validate_and_store_answers ($$) {
     $answers .= 'q'.$qkey.':'.$qval.'|' if defined $qkey;
 
     if (defined $qkey && defined $qval) {
-      if ($survey->{question}->{$qkey}->{answerKey} eq $qval) {
+      if ($survey->{question}->{$qkey}->{'answerKey'} eq $qval) {
         $good{$qkey} = $qval;
       } else {
         $bad{$qkey} = $qval unless $qkey eq ''; # remove extras, not answers
@@ -665,11 +688,11 @@ sub validate_and_store_answers ($$) {
           map {
             my $hint = $survey->{question}->{$_}->{'answerHint'};
             $hint = "($hint)" if defined $hint;
-            push @errors, $q->li('Question',$_.': ',$survey->{question}->{$_}->{'text'},
+            push @errors, $q->li('Question',$_.': ',$survey->{'question'}->{$_}->{'text'},
                                  $q->ul($q->li({class=>'youra'},'Your response: ',
                                                $q->span({class=>'bad'},$bad{$_})),
                                         $q->li({class=>'correcta'},'Correct answer is: ',
-                                               $q->strong(' '.$survey->{question}->{$_}->{answerKey}),
+                                               $q->strong(' '.$survey->{'question'}->{$_}->{'answerKey'}),
                                                $q->span({class=>'hint'},$hint))));
           } sort {$a <=> $b} keys %bad;
           push @page, $q->ul({class=>'errors'}, @errors);
@@ -707,73 +730,90 @@ sub validate_and_store_answers ($$) {
 # Returns:
 # A graph/table representing the histogram of responses
 sub show_survey_stats ($) {
-  my $sid = shift;
-  my $survey = read_survey ($sid);
-  my $res = read_survey_responses ($sid);
-  my $totals = {}; # add up responses per question
-  my $count = 0;   # add up all responses
+  my $sid    = shift;
+  $survey    = read_survey(get_local_path($sid)) unless defined $survey;
+  my $res    = read_survey_responses($sid);
   my @page;        # page struct
   my $p;
   my @comments;    # we will store the list of question IDs that are
                    # comments here for further processing
   my $compact = 0;
 
-  push @page, $q->start_div({-class=>'surveyResults'});
-  push @page, $q->p('Total responses collected: ',$count) unless $compact;
+  push @page, $q->start_div({-class => 'surveyResults', -id => $sid});
+  push @page, $q->h2($survey->{'description'});
+  push @page, $q->p('Total responses collected: ', $res->{'g_total'}) unless $compact;
 
-  foreach my $k (sort keys %{$res->{'question'}}) {
+  foreach my $k ( sort keys %{$survey->{'question'}} ) {
     # If we come across a comment-type question, we store it's number
     # in a list and skip forward
-    (push @comments, $k) && last if $res->{'question'}->{$k}->{'type'} eq 'comment';
+    (push @comments, $k) && last if $survey->{'question'}->{$k}->{'type'} =~ /text|comment/;
 
-    push @page, start_div({-class=>'surveySnswers'});
-    push @page, h3($res->{'question'}->{$k}->{'text'});
-    push @page, start_table();
-    push @page, Tr(th('Answers'),th('Replies'),th('%/Total'),th('')) unless $compact;
-    my $ans = $$res{$k};
+    push @page, $q->h4($survey->{'question'}->{$k}->{'text'});
+    push @page, $q->start_table({-class=>'results', -border=>0, -width=>'75%'});
+    push @page, $q->Tr({ -class=>'head' }, th('Answers'),
+                       th({-class=>'thRepl'},'Replies'),
+                       th({-class=>'thPct'},'%/Total'),
+                       th({-class=>'thGraph'},'')) unless $compact;
+    my $ans = $survey->{'question'}->{$k}->{'answer'};
+    my $rep = $res->{'resp'}->{$k}->{'a'};
 
-    foreach my $a (sort keys %$ans) {
-      $p = $res->{'question'}->{$k}->{'answer'}->{$a} / $$totals{$k} * 100;
-      $p = round($p, 2);
+    foreach my $a (sort keys %{$ans}) {
+      $p = round( ($rep->{$a} / $res->{'resp'}->{$k}->{'total'} * 100), 2);
       if ($compact) {
-	push @page, Tr(td(shortened($res->{'question'}->{$k}->{'answer'}->{$a}->{'content'},4)),
-                       td({-class=>'graph'},bar($p)));
+	push @page, $q->Tr(td(shortened($res->{'question'}->{$k}->{'answer'}->{$a}->{'content'}, 4)),
+                           td({-class=>'graph'}, bar($p)));
       } else {
-	push @page, Tr(td($res->{'question'}->{$k}->{answer}->{$a}->{'content'}),
-                       td({-class=>'number'},$res->{'question'}->{$k}->{'answer'}->{$a}),
-                       td({-class=>'number'},"${p}%"),
-                       td({-class=>'graph'},bar($p)));
+	push @page, $q->Tr(td($a.'. '.$ans->{$a}->{'content'}),
+                           td({-class=>'number'}, $rep->{$a} || '&nbsp;'),
+                           td({-class=>'number'}, "${p}%"),
+                           td({-class=>'graph'}, bar($p)));
       }
     }
 
-    push @page, Tr(th('Totals'),
-                   th({-class=>'number'},$$totals{$k}),
-                   th({-class=>'number'},''),th('')) unless $compact;
-    push @page, end_table();
-    push @page, end_div();
+    push @page, $q->Tr(th('Totals'),
+                   th({-class=>'number'},$res->{'resp'}->{$k}->{'total'}),
+                   th({-class=>'number'},'&nbsp;'),th('')) unless $compact;
+    push @page, $q->end_table();
   }
+  push @page, $q->end_div();
 
-  push @page, h2('Free-form comments') if scalar @comments > 0;
+  if ( scalar @comments > 0 ) {
+    push @page, h3('Free-form comments');
 
-  # Listing out comment-type replies
-  foreach my $k (@comments) {
+    # Listing out comment-type replies
     push @page, start_div({-class=>'surveySnswers'});
-    push @page, h3($res->{'question'}->{$k}->{'text'});
-    push @page, start_ul({-class=>'comments'});
-    my $a = $res->{'question'}->{$k}->{'comments'};
-    map {push @page, li($_)} @$a;
-    push @page, end_ul();
+    foreach my $k (@comments) {
+      push @page, h4($survey->{'question'}->{$k}->{'text'});
+      my $a = $res->{'resp'}->{$k}->{'a'};
+      my @li;
+      map { push @li, $q->li($a->{$_}->{'contents'}) } sort keys %{$a};
+      push @page, $q->ul({-class=>'comments'}, @li);
+    }
+    push @page, $q->end_div();
   }
-
-  push @page, end_div();
 
   return @page;
+}
+
+# draw a bar
+sub bar($) {
+  my $width = shift;
+  my $str = '&nbsp;';
+  $width = $width * 3;  # arbitrary number, to make graph look better...
+  return $q->div( {-class=>'bargraph'},
+                  span({-class=>'bar',-style=>"width:${width}px;"},$str) );
+}
+
+# shorten text
+sub shortened ($$) {
+  my($s,$l) = @_;
+  return substr($s,1,$l).'&helip;';
 }
 
 # Function form_extras
 sub form_extras($) {
   my $sid = shift;
-  my $js="('$sid').getElements().each(function(s) { s.checked = false; });";
+  my $js = "Form.getElements('$sid').each(function(s) { s.checked = false; });";
   print $q->script($js);
   return;
 }
