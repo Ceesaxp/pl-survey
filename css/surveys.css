@@ -29,3 +29,35 @@ div#doc { margin:1em; padding:1em; font-size:1em; }
 #breadcrumbs ul li { display:inline; list-style:none; float:left; margin:0; margin-right:0.5em;}
 li.splitter { margin:0; font-weight:bold; }
 span.status { color: black; }
+.question {padding:0.5em 0 0.5em 0;font-weight:bold;}
+.answers {margin-left:1em;}
+.number {text-align:right;padding-right:0.5em;}
+th.number {border-top:1px solid black;border-bottom:2px solid black;}
+ul.actions {line-height:150%;}
+a.actions {font-size:67%;font-family:sans-serif;background:#ddd;padding:2px;margin:2px;
+           margin-left:1em;
+           margin-right:-0.5em;
+           border-top:2px solid #eee;
+           border-left:2px solid #eee;
+           border-bottom:2px solid #ccc;
+           border-right:2px solid #ccc;}
+a.actions:hover {background:#eee;
+           border-top:2px solid #ccc;
+           border-left:2px solid #ccc;
+           border-bottom:2px solid #eee;
+           border-right:2px solid #eee;}
+.submit {margin-top:1em;margin-left:1em;}
+.graph { width:300px; }
+.bargraph { width:100%; }
+span.bar { background:#008;display:block; }
+div.surveyResults { width:820px; margin:auto; }
+div.surveyResults table { font-size:10pt; width:768px; border:none; margin:auto; }
+tr.head th { border-bottom:2px solid black; }
+th.thRepl { width:5em; }
+th.thPct { width:5em; }
+th.thGraph {}
+table.results td { border-bottom:0.5pt solid #ddd; }
+.help { padding:0.5em; background:#ffd; font-size:9pt; width:41em; }
+ul.comments {margin:auto; width:auto; margin-left:1em; margin-right:1em; }
+ul.comments li { padding:0.5em; list-style:none; margin:auto; margin-bottom:0.5em; border:0.5pt solid #ddd; }
+.surveyResults h3 { margin-top:2em; }
