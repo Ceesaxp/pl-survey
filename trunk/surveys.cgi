@@ -612,6 +612,7 @@ sub save_score ($$) {
 sub sanatize_input($) {
   my $val = shift;
   my $html_tags = qr(p|a|i|b|em|strong|span|script|h[1-6]|li|ol|ul|dl|dt|dd|strike|sub|sub|font|style|br|form|input|button|table|td|tr|th|tbody|thead|tfoot|div);
+  $val =~ s/\|/ /g; # strip vertical bars to ensure that we don't mess up our storage
   $val =~ s/\r//g;
   $val =~ s/\n/\\n/g;
   $val =~ s/<\/?${html_tags}[^>]*\/?>//g; # strip all listed HTML tags, very
