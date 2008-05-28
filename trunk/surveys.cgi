@@ -18,7 +18,7 @@ use Data::Dumper; # for debugging purposes, mostly
 use vars qw/$q $path $survey_type @pgdebug $debug $survey/;
 
 use constant VERSION => '0.2';
-use constant CONFIG_DIR => 'cgi-data/surveys';
+use constant CONFIG_DIR => 'data/surveys';
 use constant SCRIPT_URL => '/cgi-bin/surveys.cgi';
 use constant COOKIE_NAME => 'net.nsroot.vkocmedb601.cgi.surveys.soe';
 
@@ -612,12 +612,8 @@ sub save_score ($$) {
 sub sanatize_input($) {
   my $val = shift;
   my $html_tags = qr(p|a|i|b|em|strong|span|script|h[1-6]|li|ol|ul|dl|dt|dd|strike|sub|sub|font|style|br|form|input|button|table|td|tr|th|tbody|thead|tfoot|div);
-
-  # strip new lines and some control characters
-  $val =~ s/[\n\r\l]/\\n/g;     # alternative approach could be to replace some
-                                # of these with meta representations, so that in
-                                # print form line breaks and such remains.
-
+  $val =~ s/\r//g;
+  $val =~ s/\n/\\n/g;
   $val =~ s/<\/?${html_tags}[^>]*\/?>//g; # strip all listed HTML tags, very
                                           # crude
   return $val;
@@ -795,20 +791,31 @@ sub show_survey_stats ($) {
   return @page;
 }
 
-# reformat
+# Function: reformat(TXT)
+#
+# Poor-man's wiki engine.  Supported formatting:
+#
+#   - *bold* and _italics_
+#   - single line break is treated as <br/>
+#   - double line break creates a <p/>
+#   - three spaces, followed by a minus (-) or an asterics (*) and a space create an <ul/>
+#   - three spaces, followed by a number, followed by a dot and a space create an <ol/>
+#   - list nesting is NOT supported
 sub reformat($) {
   my $txt = shift;
   my @blocks = split qr%\\n\\n%, $txt;
   my @rtxt;
   foreach my $block (@blocks) {
     next if $block =~ /^$/;
-	$block =~ s%\*([^*]+)\*%<strong>$1</strong>%g;
+	$block =~ s%\*([^ *][^*]+)\*%<strong>$1</strong>%g;
 	$block =~ s%_([^_]+)_%<em>$1</em>%g;
-	if ($block =~ /^   - /) {
+	if ($block =~ /^\s{3}([-*]|\d+\.)\s/) {
+	  my $tag = ( $1 =~ /\d/ ? 'ol' : 'ul' );
+	  my $re = ( $tag eq 'ul' ? qr{[-*]} : qr{\d+\.} );
 	  my $tmp;
-	  map { $tmp .= "<li>$_</li>"; } split qr{\s\s\s\-\s}, $block;
-	  $block = "\n<ul>$tmp</ul>\n";
-	  #$block =~ s%\\n%%g;
+	  map { $tmp .= "<li>$_</li>" unless $_ eq ''; } split qr%\s{3}$re\s%, $block;
+	  $block = "\n<$tag>$tmp</$tag>\n";
+	  $block =~ s%\\n%<br/>%g;
 	} else {
 	  $block =~ s%\\n%<br/>%g;
 	  $block = "<p>$block</p>";
