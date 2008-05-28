@@ -17,8 +17,8 @@ use FileHandle;
 use Data::Dumper; # for debugging purposes, mostly
 use vars qw/$q $path $survey_type @pgdebug $debug $survey/;
 
-use constant VERSION => '0.2';
-use constant CONFIG_DIR => 'data/surveys';
+use constant VERSION => '0.3';
+use constant CONFIG_DIR => 'cgi-data/surveys';
 use constant SCRIPT_URL => '/cgi-bin/surveys.cgi';
 use constant COOKIE_NAME => 'net.nsroot.vkocmedb601.cgi.surveys.soe';
 
@@ -332,7 +332,7 @@ sub breadcrubms($$) {
   push @bcrumbs, $q->li( a( { href=>absolute_url('/') }, 'Surveys Home' ) );
   if (defined $sid) {
     push @bcrumbs, $q->li( { class=>'leftTab' }, '' );
-    push @bcrumbs, $q->li( a( { href=>absolute_url("/surveys/$sid") }, $title) );
+    push @bcrumbs, $q->li( a( { href=>absolute_url("/survey/$sid") }, $title) );
   }
   return $q->ul( {id=>'nav'}, @bcrumbs);
 }
@@ -388,6 +388,7 @@ sub build_form ($$) {
                               -default=>'',
                               -rows=>$rows,
                               -columns=>$cols);
+      $answers .= $q->div({-class=>'help'}, wiki_format_msg());
     }
     push @qaset, $q->li($q->span({class=>'question'}, $question->{'text'}),
                         $q->div({-class=>'answers'},$answers));
@@ -586,7 +587,7 @@ sub set_survey_taken_cookie ($) {
   my $cookie = $q->cookie(-name    => "survey.$sid",
                           -value   => 'taken',
                           -expires => '+1w');
-  print $q->header(-cookie => $cookie );
+  print $q->header( -charset => 'utf-8', -cookie => $cookie );
   return;
 }
 
@@ -744,11 +745,11 @@ sub show_survey_stats ($) {
     # in a list and skip forward
     (push @comments, $k) && last if $survey->{'question'}->{$k}->{'type'} =~ /text|comment/;
 
-    push @page, $q->h4($survey->{'question'}->{$k}->{'text'});
-    push @page, $q->start_table({-class=>'results', -border=>0, -width=>'75%'});
+    push @page, $q->h4($k.'.',$survey->{'question'}->{$k}->{'text'});
+    push @page, $q->start_table({-class=>'results'});
     push @page, $q->Tr({ -class=>'head' }, th('Answers'),
                        th({-class=>'thRepl'},'Replies'),
-                       th({-class=>'thPct'},'%/Total'),
+                       th({-class=>'thPct'},'%% total'),
                        th({-class=>'thGraph'},'')) unless $compact;
     my $ans = $survey->{'question'}->{$k}->{'answer'};
     my $rep = $res->{'resp'}->{$k}->{'a'};
@@ -774,16 +775,16 @@ sub show_survey_stats ($) {
   push @page, $q->end_div();
 
   if ( scalar @comments > 0 ) {
-    push @page, h3('Participant comments');
 
     # Listing out comment-type replies
-    push @page, start_div({-class=>'surveySnswers'});
+    push @page, start_div({-class=>'surveyResults'});
+    push @page, h3('Participant comments');
+
     foreach my $k (@comments) {
       push @page, $q->h4($survey->{'question'}->{$k}->{'text'});
       my $a = $res->{'resp'}->{$k}->{'a'};
-      #push @page, $q->pre(Dumper($a));
       my @li;
-      map { push @li, $q->div(reformat($_)) } sort keys %{$a};
+      map { push @li, $q->li(reformat($_)) } sort keys %{$a};
       push @page, $q->ul({-class=>'comments'}, @li);
     }
     push @page, $q->end_div();
@@ -822,7 +823,7 @@ sub reformat($) {
 	  $block = "<p>$block</p>";
 	}
 	push @rtxt, $block;
-  }  
+  }
   return join "\n",@rtxt;
 }
 
@@ -874,6 +875,21 @@ sub round {
     my($precision) = shift;
     return int($number*10**$precision + .5) / 10**$precision;
 }
+
+
+# Function: wiki_format_msg()
+#
+# Returns a short wiki-like formatting message
+sub wiki_format_msg () {
+    return <<"EOF";
+HTML tags will be removed, but you can mark up <strong>*bold*</strong> and
+<em>_italics_</em>.  Blank lines separate paragraphs.  A blank line followed
+by a line starting with 3 spaces, a minus and a space creates a bullet point.
+Same, but with a digit, follwed by a dot instead of a minus will create
+numbered list.
+EOF
+}
+
 
 
 # Function show_documentation
