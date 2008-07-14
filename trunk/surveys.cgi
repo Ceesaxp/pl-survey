@@ -16,7 +16,7 @@ use FileHandle;
 #use Data::Dumper; # for debugging purposes, mostly
 use vars qw/$q $path $survey_type @pgdebug $debug $survey/;
 
-use constant VERSION => '0.4';
+use constant VERSION => '0.4.2';
 use constant CONFIG_DIR => 'cgi-data/surveys';
 use constant SCRIPT_URL => '/cgi-bin/surveys.cgi';
 use constant COOKIE_NAME => 'net.citigroup.russia.cgi.surveys.soe';
@@ -175,6 +175,14 @@ eval {
     authenticate_admin_user ($sid) unless survey_admin_cookie_set_p();
     print standard_headers ($survey->{'description'}, 0, $sid);
     print build_survey_report ($sid);
+  };
+
+  GET qr{^/survey/stats/([-_[:alnum:]]+)/?$} => sub {
+    my $sid = $1;
+    $survey = read_survey(get_local_path($sid)) unless defined $survey;
+    authenticate_admin_user($sid) unless survey_admin_cookie_set_p();
+    print standard_headers($survey->{'description'}, 0, $sid);
+    print build_quiz_status_report($sid);
   };
 
   # editing survey content !!FIXME!!
@@ -432,6 +440,137 @@ sub build_form ($$) {
   push @page, $q->end_div();
   return @page;
 }
+
+
+# Function read_responses_for_status_report (SID)
+#
+# Read responses database in and arrange data in a hash for easy retreival in
+# the reporting engine.
+sub read_responses_for_status_report ($) {
+  my $sid = shift;
+  my $db = {};  # define anonymous hash to hold database in
+  open my $fh, CONFIG_DIR.'/'.$sid.'.db' || debug_trace('error',$@);
+  binmode $fh, ':encoding(UTF-8)';
+  $survey = read_survey(get_local_path($sid)) unless defined $survey;
+
+  while (<$fh>) {
+    next if (/^#/);  # skip if start with comment sign
+    s/\r\n$//; # strip CRLFs
+
+    my @r = split /\|/;
+    my @answers;
+    my $l = (scalar @r) - 2;
+    map {
+      push @answers, m/q\d+:(.+)/;
+    } @r[4..$l];
+    push @answers, $r[$l+1];
+    push @answers, $r[$l+2];
+
+    my ($day, $tm) = split / /,$r[0];
+    my $user = $r[1];
+
+    $db->{$day}->{$user} = { $r[0] => { 'answers' => \@answers,
+                                        'good'    => $r[$l],
+                                        'bad'     => $r[$l+1] } };
+    $db->{$day}->{$user}->{'times_user_day'}++;
+    $db->{$day}->{'times_day'}++;
+    $db->{$user}->{'times_user'}++;
+    $db->{'times_total'}++;
+
+    if ($r[$l] >= $survey->{'passRate'}) {
+      $db->{$day}->{'times_pass_day'}++;
+      push @{$db->{'passed_users'}}, $user;
+      push @{$db->{$day}->{'passed_users'}}, $user;
+      $db->{'times_pass_total'}++;
+    }
+  }
+
+  close ($fh);
+  return $db;
+}
+
+
+# Function: go_home()
+#
+# Generates a go to survey home link
+sub go_home () {
+  my $sid = $survey->{'id'}; # CAUTION! expects that $survey has been initted
+                             # before!
+  my $url = SCRIPT_URL;
+  return <<"EOT";
+<ul><li>Return to <a href="$url">CMB Surveys home</a>.</li>
+<li>Return to <a href="$url/survey/$sid">this survey's front</a> page.</li>
+</ul>
+EOT
+}
+
+
+# Function: build_quiz_status_report(SID)
+#
+# Status report for a quiz-type survey SID
+#
+# SID - Survey ID to pull data out for
+sub build_quiz_status_report ($) {
+  my $sid = shift;
+  $survey = read_survey(get_local_path($sid)) unless defined $survey;
+  # bail out if this is not a test
+  return "This is not a quiz/test/assessment.".go_home()
+    unless ($survey->{'surveyType'} =~ m/(assessment|quiz|test|exam)/i);
+
+  my (@passed_tod, @passed_all) = ();
+  my $responses = read_responses_for_status_report($sid);
+
+  my $d = $ARGV[1] || substr(time2iso(),0,10);
+  my $s_name = $survey->{'description'};
+  my $ts = localtime;
+  my $taken = $responses->{'times_total'} || 0;
+  my $ptotal = $responses->{'times_pass_total'} || 0;
+  my $taken_tod = $responses->{$d}->{'times_day'} || 0;
+  my $ptoday = $responses->{$d}->{'times_pass_day'} || 0;
+  @passed_tod = @{$responses->{$d}->{'passed_users'}}
+    if defined $responses->{$d}->{'passed_users'};
+  @passed_all = @{$responses->{'passed_users'}}
+    if defined $responses->{'passed_users'};
+
+  @passed_tod = qw/none/ if (scalar @passed_tod == 0);
+  @passed_all = qw/none/ if (scalar @passed_all == 0);
+
+  format Report_Format =
+<pre style="margin:1em;padding:1em;width:48em;border:1px solid black;">
+                                                                    @<<<<<<<<<<
+	                                                                  $ts
+                               SUMMARY RESULTS
+@||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+$s_name
+
+-------------------------------------------------------------------------------
+Total number of responses collected: @#####
+                                     $taken
+  Total number of passes:            @#####
+                                     $ptotal
+Number of responses today:           @#####
+                                     $taken_tod
+  Total passes for today:            @#####
+                                     $ptoday
+
+Users who passed today: @*
+                        @passed_tod
+
+All users who passed:   @*
+                        @passed_all
+
+-------------------------------------------------------------------------------
+                                END OF REPORT
+</pre>
+.
+
+  $~ = 'Report_Format';
+
+  write;
+
+  return;
+}
+
 
 
 # Function: autheticate_user(SURVEY_ID)
