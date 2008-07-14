@@ -8,6 +8,7 @@ ul#signon li { list-style:none; margin:0; padding:0; margin-top:1em }
 .warning {font-weight:bold;color:red;display:block;margin-top:1em;}
 div.submit {margin:1em 0 1em 0;}
 div.answers { margin-top:0.5em; }
+div.survey { width:820px; margin:auto; }
 span.question { font-weight:bold; }
 span.you { font-weight:bold; color:red; }
 span.pcnt { font-weight:bold; }
